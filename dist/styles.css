@@ -1,0 +1,566 @@
+/* Daily Calendar — styled after macOS Calendar, adapted to Obsidian's own
+   theme variables so it follows the user's light/dark mode and accent
+   colour automatically instead of imposing a fixed palette. */
+
+.daily-calendar-root {
+	--dc-radius-block: 6px;
+	--dc-radius-pill: 4px;
+	--dc-block-pad-y: 3px;
+	--dc-block-pad-x: 6px;
+	--dc-block-font: 11.5px;
+	--dc-gutter-width: 56px;
+
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	font-family: var(--font-interface);
+	color: var(--text-normal);
+	user-select: none;
+}
+
+.daily-calendar-root.dc-density-compact {
+	--dc-block-pad-y: 1px;
+	--dc-block-pad-x: 4px;
+	--dc-block-font: 10.5px;
+}
+.daily-calendar-root.dc-density-spacious {
+	--dc-block-pad-y: 5px;
+	--dc-block-pad-x: 8px;
+	--dc-block-font: 12.5px;
+}
+.daily-calendar-root.dc-radius-none { --dc-radius-block: 2px; --dc-radius-pill: 2px; }
+.daily-calendar-root.dc-radius-small { --dc-radius-block: 4px; --dc-radius-pill: 3px; }
+.daily-calendar-root.dc-radius-medium { --dc-radius-block: 6px; --dc-radius-pill: 4px; }
+.daily-calendar-root.dc-radius-large { --dc-radius-block: 10px; --dc-radius-pill: 7px; }
+
+/* ------------------------------------------------------------------ header */
+
+.daily-calendar-header {
+	display: flex;
+	align-items: center;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex: 0 0 auto;
+	gap: 10px;
+}
+
+.daily-calendar-btn {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	border-radius: 6px;
+	height: 30px;
+	box-sizing: border-box;
+	padding: 0 14px;
+	font-size: 12.5px;
+	font-weight: 500;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+}
+.daily-calendar-btn:hover { background: var(--background-modifier-hover); }
+
+.daily-calendar-nav-group {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.daily-calendar-icon-btn {
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--text-normal);
+	width: 30px;
+	height: 30px;
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	cursor: pointer;
+	flex: 0 0 auto;
+}
+.daily-calendar-icon-btn:hover { background: var(--background-modifier-hover); border-color: var(--background-modifier-border); }
+.daily-calendar-icon-btn svg {
+	width: 18px;
+	height: 18px;
+	stroke: var(--text-normal);
+	stroke-width: 2.25;
+}
+
+.daily-calendar-title {
+	flex: 1 1 0;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	font-size: 15px;
+	font-weight: 600;
+	margin-left: 2px;
+	letter-spacing: -0.1px;
+	white-space: nowrap;
+}
+
+.daily-calendar-view-switcher {
+	flex: 0 0 auto;
+	display: flex;
+	background: var(--background-modifier-border);
+	border-radius: 7px;
+	padding: 2px;
+	gap: 2px;
+}
+.daily-calendar-switch-btn {
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 12.5px;
+	font-weight: 500;
+	padding: 4px 12px;
+	border-radius: 5px;
+	cursor: pointer;
+	transition: background-color 120ms ease, color 120ms ease;
+}
+.daily-calendar-switch-btn:hover { color: var(--text-normal); }
+.daily-calendar-switch-btn.is-active {
+	background: var(--background-primary);
+	color: var(--text-normal);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.daily-calendar-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* -------------------------------------------------------------- day badge */
+/* Shared "today" circle look, used in Month/Year day numbers and Week/Day headers. */
+
+.dc-day-badge,
+.dc-timeline-header-num,
+.dc-year-daynum {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+}
+
+/* --------------------------------------------------------------- add button */
+
+.dc-add-btn {
+	width: 18px;
+	height: 18px;
+	flex: 0 0 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	color: var(--text-faint);
+	opacity: 0;
+	cursor: pointer;
+	transition: opacity 100ms ease, background-color 100ms ease;
+}
+.dc-add-btn:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.dc-add-btn svg { width: 12px; height: 12px; }
+
+/* ---------------------------------------------------------------- pills */
+/* Compact chips used for all-day items in Month cells and the timeline all-day row. */
+
+.dc-pill {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 5px;
+	border-radius: var(--dc-radius-pill);
+	background: color-mix(in srgb, var(--dc-item-color) 18%, var(--background-primary));
+	font-size: 11px;
+	line-height: 1.5;
+	cursor: pointer;
+	overflow: hidden;
+	white-space: nowrap;
+	flex: 0 0 auto;
+}
+.dc-pill:hover { background: color-mix(in srgb, var(--dc-item-color) 28%, var(--background-primary)); }
+.dc-pill-dot {
+	width: 6px;
+	height: 6px;
+	flex: 0 0 6px;
+	border-radius: 50%;
+	background: var(--dc-item-color);
+}
+.dc-pill-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+}
+.dc-pill-label.dc-completed { text-decoration-line: line-through; color: var(--text-faint); }
+.dc-pill-label.dc-linked { text-decoration-line: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.dc-pill-label.dc-completed.dc-linked { text-decoration-line: underline line-through; }
+.dc-pill-check {
+	width: 11px;
+	height: 11px;
+	flex: 0 0 11px;
+	border-radius: 3px;
+	border: 1.5px solid var(--dc-item-color);
+	cursor: pointer;
+	position: relative;
+}
+.dc-pill-check.is-checked { background: var(--dc-item-color); }
+.dc-pill-check.is-checked::after {
+	content: "";
+	position: absolute;
+	left: 2.5px;
+	top: -0.5px;
+	width: 3px;
+	height: 6px;
+	border: solid white;
+	border-width: 0 1.5px 1.5px 0;
+	transform: rotate(45deg);
+}
+
+/* --------------------------------------------------------------- Month view */
+
+.dc-month { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.dc-month-row { display: flex; }
+.dc-month-headerrow { border-bottom: 1px solid var(--background-modifier-border); flex: 0 0 auto; }
+.dc-month-headercell {
+	flex: 1 1 0;
+	min-width: 0;
+	text-align: center;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: var(--text-faint);
+	padding: 6px 0;
+}
+.dc-month-weeknum-cell {
+	width: 28px;
+	flex: 0 0 28px;
+	font-size: 10px;
+	color: var(--text-faint);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.dc-month-grid { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.dc-month-grid .dc-month-row {
+	flex: 1 1 0;
+	min-height: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.dc-month-grid .dc-month-row:last-child { border-bottom: none; }
+.dc-month-cell {
+	flex: 1 1 0;
+	min-width: 0;
+	border-right: 1px solid var(--background-modifier-border);
+	padding: 3px 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	cursor: pointer;
+	position: relative;
+	overflow: hidden;
+}
+.dc-month-cell:last-child { border-right: none; }
+.dc-month-cell:hover { background: var(--background-modifier-hover); }
+.dc-month-cell.dc-outside-month { color: var(--text-faint); }
+.dc-month-cell.dc-outside-month .dc-day-badge { color: var(--text-faint); }
+.dc-month-cell.dc-weekend { background: var(--background-secondary); }
+.dc-month-cell.dc-drop-target { background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-primary)); }
+
+.dc-month-cell-header { display: flex; align-items: center; justify-content: space-between; }
+.dc-day-badge {
+	width: 22px;
+	height: 22px;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+}
+.dc-day-badge:hover { background: var(--background-modifier-hover); }
+.dc-is-today .dc-day-badge {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 600;
+}
+.dc-month-cell:hover .dc-add-btn { opacity: 1; }
+
+.dc-month-cell-items { display: flex; flex-direction: column; gap: 1px; overflow: hidden; min-height: 0; }
+.dc-more-link { font-size: 10.5px; color: var(--text-muted); padding: 1px 4px; cursor: pointer; }
+.dc-more-link:hover { color: var(--text-normal); text-decoration: underline; }
+
+/* ---------------------------------------------------------------- Year view */
+
+.dc-year { flex: 1 1 auto; overflow-y: auto; padding: 16px; }
+.dc-year-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 22px; }
+.dc-year-month-title {
+	font-size: 13px;
+	font-weight: 600;
+	margin-bottom: 6px;
+	cursor: pointer;
+	width: fit-content;
+}
+.dc-year-month-title:hover { color: var(--interactive-accent); }
+.dc-year-headerrow { display: flex; margin-bottom: 2px; }
+.dc-year-headercell { flex: 1 1 0; text-align: center; font-size: 9px; color: var(--text-faint); }
+.dc-year-row { display: flex; }
+.dc-year-cell {
+	flex: 1 1 0;
+	aspect-ratio: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	border-radius: 4px;
+	gap: 1px;
+}
+.dc-year-cell:hover { background: var(--background-modifier-hover); }
+.dc-year-cell.dc-outside-month { visibility: hidden; pointer-events: none; }
+.dc-year-daynum { font-size: 10px; color: var(--text-normal); }
+.dc-year-cell.dc-is-today .dc-year-daynum {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	width: 15px;
+	height: 15px;
+	font-weight: 600;
+}
+.dc-year-dots { display: flex; gap: 1.5px; }
+.dc-year-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--dc-item-color); }
+
+/* ------------------------------------------------------------- Week/Day view */
+
+.dc-timeline { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+
+.dc-timeline-header { display: flex; border-bottom: 1px solid var(--background-modifier-border); flex: 0 0 auto; }
+.dc-timeline-gutter-spacer {
+	width: var(--dc-gutter-width);
+	flex: 0 0 var(--dc-gutter-width);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 9px;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	text-align: center;
+}
+.dc-timeline-header-cols { display: flex; flex: 1 1 auto; }
+.dc-timeline-header-col {
+	flex: 1 1 0;
+	min-width: 0;
+	text-align: center;
+	padding: 8px 4px;
+	cursor: pointer;
+}
+.dc-timeline-header-col:hover { background: var(--background-modifier-hover); }
+.dc-timeline-header-col.dc-weekend { background: var(--background-secondary); }
+.dc-timeline-header-line {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+.dc-timeline-header-dow {
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	color: var(--text-faint);
+	letter-spacing: 0.02em;
+}
+.dc-timeline-header-num {
+	font-size: 15px;
+	font-weight: 500;
+	width: 24px;
+	height: 24px;
+}
+.dc-timeline-header-col.dc-is-today .dc-timeline-header-num {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: 600;
+}
+
+.dc-timeline-allday {
+	display: flex;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex: 0 0 auto;
+	max-height: 110px;
+	overflow-y: auto;
+}
+.dc-timeline-allday-cols { display: flex; flex: 1 1 auto; }
+.dc-timeline-allday-col {
+	flex: 1 1 0;
+	min-width: 0;
+	padding: 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.dc-timeline-allday-col.dc-weekend { background: var(--background-secondary); }
+
+.dc-timeline-scroll { flex: 1 1 auto; overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
+.dc-timeline-grid { position: relative; display: flex; }
+.dc-timeline-gutter { width: var(--dc-gutter-width); flex: 0 0 var(--dc-gutter-width); position: relative; }
+.dc-timeline-hour-label {
+	position: absolute;
+	right: 8px;
+	left: 0;
+	text-align: right;
+	transform: translateY(-50%);
+	font-size: 10.5px;
+	color: var(--text-faint);
+	white-space: nowrap;
+}
+.dc-timeline-columns { flex: 1 1 auto; display: flex; position: relative; }
+.dc-timeline-col {
+	position: relative;
+	min-width: 0;
+	border-left: 1px solid color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+	cursor: pointer;
+}
+.dc-timeline-col:first-child { border-left: none; }
+.dc-timeline-col.dc-weekend { background: var(--background-secondary); }
+.dc-timeline-col.dc-is-today { background: color-mix(in srgb, var(--interactive-accent) 5%, transparent); }
+.dc-timeline-hourline {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 0;
+	border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+	pointer-events: none;
+}
+.dc-timeline-hourline-off {
+	border-top-color: color-mix(in srgb, var(--background-modifier-border) 30%, transparent);
+}
+
+/* ----------------------------------------------------------------- blocks */
+
+.dc-block {
+	position: absolute;
+	border-radius: var(--dc-radius-block);
+	background: color-mix(in srgb, var(--dc-item-color) 88%, var(--background-primary));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--dc-item-color) 55%, transparent);
+	overflow: hidden;
+	cursor: pointer;
+	z-index: 1;
+}
+.dc-block:hover { z-index: 3; filter: brightness(1.05); }
+.dc-block.dc-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+.dc-block-body {
+	height: 100%;
+	padding: var(--dc-block-pad-y) var(--dc-block-pad-x);
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	cursor: grab;
+}
+.dc-block-label {
+	font-size: var(--dc-block-font);
+	font-weight: 600;
+	color: white;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	line-height: 1.25;
+}
+.dc-block-label.dc-completed { text-decoration-line: line-through; opacity: 0.7; }
+.dc-block-label.dc-linked { text-decoration-line: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+.dc-block-label.dc-completed.dc-linked { text-decoration-line: underline line-through; }
+.dc-block-time { font-size: 10px; color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
+
+.dc-block-task {
+	background: var(--background-primary);
+	border: 1.5px solid var(--dc-item-color);
+	box-shadow: none;
+}
+.dc-block-task .dc-block-body { flex-direction: row; align-items: center; gap: 4px; padding: 0 5px; }
+.dc-block-task .dc-block-label { color: var(--text-normal); font-size: 10.5px; font-weight: 500; }
+.dc-block-task .dc-pill-check { flex: 0 0 10px; width: 10px; height: 10px; }
+
+.dc-resize-handle { position: absolute; left: 0; right: 0; height: 6px; cursor: ns-resize; }
+.dc-resize-top { top: -2px; }
+.dc-resize-bottom { bottom: -2px; }
+
+.dc-create-preview {
+	background: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+	border: 1.5px dashed var(--interactive-accent);
+	pointer-events: none;
+	z-index: 5;
+}
+
+.dc-now-line {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 0;
+	border-top: 1px solid color-mix(in srgb, var(--color-red, #e03131) 35%, transparent);
+	z-index: 3;
+	pointer-events: none;
+}
+.dc-now-line-today {
+	border-top: 2px solid var(--color-red, #e03131);
+	z-index: 4;
+}
+.dc-now-line-today::before {
+	content: "";
+	position: absolute;
+	left: -4px;
+	top: -4px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--color-red, #e03131);
+}
+
+.dc-drag-tooltip {
+	position: fixed;
+	z-index: 1000;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 4px 8px;
+	font-size: 11px;
+	font-weight: 500;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	pointer-events: none;
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ modal */
+
+.daily-calendar-editor { min-width: 360px; }
+.dc-link-preview {
+	width: 100%;
+	text-align: right;
+	font-size: 11px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	padding: 2px 0 4px;
+}
+.daily-calendar-editor .setting-item:last-child {
+	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 8px;
+	padding-top: 14px;
+}
+.daily-calendar-editor .setting-item:last-child .setting-item-control { justify-content: flex-end; gap: 8px; }
+.daily-calendar-editor .setting-item-info { flex: 1 1 auto; }
+
+/* --------------------------------------------------------- settings tab */
+
+.daily-calendar-color-rules .setting-item { padding: 6px 0; }
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 520px) {
+	.daily-calendar-root { --dc-gutter-width: 40px; }
+	.daily-calendar-title { font-size: 13px; }
+	.daily-calendar-switch-btn { padding: 4px 8px; font-size: 11.5px; }
+	.dc-month-weeknum-cell { display: none; }
+	.dc-year-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+}
