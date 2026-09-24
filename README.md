@@ -2,6 +2,7 @@
 
 [![License](https://img.shields.io/github/license/Neomoorea/obsidian-daynest)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/Neomoorea/obsidian-daynest)](https://github.com/Neomoorea/obsidian-daynest/releases/latest)
+![Obsidian 1.4.0+](https://img.shields.io/badge/obsidian-1.4.0%2B-7c3aed?style=flat-square)
 
 A modern calendar, nested entirely in your Daily Notes' Markdown.
 
@@ -136,11 +137,11 @@ to your "Open Daily Note in" setting.
   **Periodic Notes** plugin as a fallback) — see
   [Daily Notes integration](#daily-notes-integration).
 
-### Option A — with BRAT (recommended)
+### Option A — with BRAT
 
-1. Install the community plugin **BRAT** (Beta Reviewer's Auto-update
+1. Install **BRAT** (Beta Reviewer's Auto-update
    Tool) from Obsidian's Community Plugins browser, and enable it.
-2. Command palette → **BRAT: Add a beta plugin for testing**, and paste in
+2. Command palette → **BRAT: Add a beta plugin for testing**, then add
    `Neomoorea/obsidian-daynest`.
 3. Enable **Daynest** under Community plugins.
 
