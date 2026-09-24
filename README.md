@@ -7,8 +7,7 @@ A modern calendar, nested entirely in your Daily Notes' Markdown.
 
 Daynest adds Year, Month, Week, and Day calendar views to Obsidian. There's
 no database, no new file format, and no hidden metadata: every event and
-task it shows is read from — and written back to — plain Markdown bullets
-inside your existing Daily Notes. Delete the plugin at any point and your
+task it shows is read from and written back to plain Markdown inside your existing Daily Notes. Delete the plugin at any point and your
 notes stay exactly as readable as they always were.
 
 ## Screenshots
@@ -18,18 +17,15 @@ notes stay exactly as readable as they always were.
 
 ## Why another calendar plugin?
 
-Obsidian already has several capable calendar and agenda plugins. Daynest
-exists because I wanted something narrower: a calendar that reads and
+Daynest offers a simple calendar experience that can be used out of the box.
+No extensive set up, no metadata, no documentation the size of an encyclopaedia.
+
+Daynest exists because I wanted something narrow: a simple, intuitive calendar experience that reads and
 writes nothing but the Daily Notes I already keep, in plain Markdown, with
 no properties, IDs, or plugin-only files anywhere in my vault. No sync
 service to trust, no separate database to get out of sync with my notes,
 and no dozen configuration screens to get through before it does anything
 useful.
-
-If your Daily Notes already have an `## Events` or `## Tasks` section (or
-you're happy to add one), Daynest just shows it as a calendar. That's the
-whole idea — simple on purpose, not because features are missing by
-accident.
 
 ## Features
 
@@ -56,13 +52,13 @@ accident.
 
 ## The Markdown syntax
 
-Daynest recognises exactly four line shapes. Everything else in a
+Daynest recognises a simple syntax. Everything else in a
 Daily Note — including other bullets, headings, and paragraphs — is left
 completely untouched.
 
 | What | Syntax | Example |
 |---|---|---|
-| Timed event | `- HH:MM - HH:MM Title` | `- 09:00 - 10:00 Team meeting #work` |
+| Timed event | `- HH:MM - HH:MM Title #Tag` | `- 09:00 - 10:00 Team meeting #work` |
 | All-day event | *(same shape, spanning your configured working hours)* | `- 08:00 - 18:00 Conference #work` |
 | All-day task | `- [ ] Title` | `- [ ] Buy milk` |
 | Timed task | `- [ ] HH:MM Title` | `- [ ] 15:30 Buy groceries #personal` |
@@ -78,10 +74,9 @@ A completed task uses `- [x]` instead of `- [ ]`.
   range) and `- This meeting starts at 09:00` are both ordinary Markdown,
   not events.
 - An event is treated as **all-day** when its times exactly match your
-  configured *working hours* — there's no hidden metadata marking this, so
+  configured *working hours*. There's no hidden metadata marking this, so
   changing your working hours later can change how an old all-day event is
-  interpreted. That trade-off is what keeps the file format free of
-  anything beyond the four syntaxes above.
+  interpreted.
 
 By default, events and tasks live under `## Events` and `## Tasks` headings
 (both configurable, and a "single section" mode is available in Settings if
@@ -94,9 +89,7 @@ elsewhere in the same note.
 - **Ribbon icon** or **command palette → "Open calendar"** opens the
   calendar in a new tab.
 - **Year/Month/Week/Day** switcher, **Today** button, and **◀ ▶** arrows in
-  the header behave as you'd expect (the switcher's order is Day → Week →
-  Month → Year, and the ◀ Today ▶ group sits together on the right). Set
-  **Default view** to "Last used view" in Settings if you'd rather it
+  the header. Set **Default view** to "Last used view" in Settings if you'd rather it
   reopen wherever you left it than always the same view.
 - **Click a date** (Month/Year) or a **day header** (Week/Day) to open that
   day's Daily Note, creating it from your template if it doesn't exist yet.
@@ -106,20 +99,15 @@ elsewhere in the same note.
 - **The editor** has a **Task** toggle that converts what you're creating
   between a timed event and a checkbox task (it moves it into your
   configured task section on save). Typing a title that starts with
-  `- [ ]` or `[x]` does the same thing automatically. Pressing **Return**
-  in the title field saves, the same as clicking Save.
+  `- [ ]` or `[x]` does the same thing automatically.
 - **Month view:** hover a day for a small **+** button (quick-add, all-day
   by default); drag an item onto another day to move it; "+N more" opens
-  that day in Day view rather than a popover.
+  that day in Day view.
 - **Week/Day view:** click-and-release on an empty slot creates a
   default-length event there and opens the editor; **drag** on an empty
   slot draws a custom time range; **drag an existing event's body** to move
-  it, both across time and across days — a tooltip follows your cursor
-  showing exactly where it'll land; **drag its top/bottom edge** to resize
-  it. Tasks show as slim, minimal-height chips — only events get resize
-  handles, since a task is a point in time, not a span. The all-day row
-  only appears when there's actually an all-day item to show that
-  week/day.
+  it, both across time and across days; **drag its top/bottom edge** to resize
+  it.
 - All of the above is also available as **Obsidian commands** (open the
   command palette and search "calendar"), so you can assign your own
   hotkeys via **Settings → Hotkeys** — "Go to today", "New event", "New
@@ -141,20 +129,6 @@ you use instead). Creating an event or task on a date with no note yet
 creates that note first, from your template, with `{{date}}`, `{{date:
 FORMAT}}`, `{{time}}`, and `{{title}}` substituted — then opens it according
 to your "Open Daily Note in" setting.
-
-## Limitations
-
-A few things are deliberately out of scope or simplified, rather than
-quietly cut corners:
-
-- No recurring events, reminders/notifications, or multi-day spanning
-  events, and no syncing with external calendars — everything lives in
-  your vault.
-- Dragging to create, move, or resize needs a mouse or trackpad; touch
-  support is basic (tapping to open, edit, or toggle a task works,
-  precise dragging doesn't yet).
-- Month view's "+N more" opens that day in Day view rather than a popover.
-- Colour rules reorder via ↑/↓ buttons rather than drag-and-drop.
 
 ## Installing it
 
