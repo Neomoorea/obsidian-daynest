@@ -1,7 +1,7 @@
 # Daynest
 
-![License](https://img.shields.io/github/license/Neomoorea/obsidian-daynest)
-![Latest release](https://img.shields.io/github/v/release/Neomoorea/obsidian-daynest)
+[![License](https://img.shields.io/github/license/Neomoorea/obsidian-daynest)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/Neomoorea/obsidian-daynest)](https://github.com/Neomoorea/obsidian-daynest/releases/latest)
 
 A modern calendar, nested entirely in your Daily Notes' Markdown.
 
@@ -13,7 +13,7 @@ notes stay exactly as readable as they always were.
 ## Screenshots
 
   ![Week view](docs/screenshots/screenshot_week.png)
-  ![Month view](docs/screenshots/screenshot_dailynote.png)
+  ![Dailynote view](docs/screenshots/screenshot_dailynote.png)
 
 ## Why another calendar plugin?
 
@@ -112,10 +112,7 @@ elsewhere in the same note.
   command palette and search "calendar"), so you can assign your own
   hotkeys via **Settings → Hotkeys** — "Go to today", "New event", "New
   task", and "Switch to Year/Month/Week/Day view" are all there.
-
-## Colour rules
-
-Colours come from **tags**, configured in **Settings → Daynest →
+- **Colour rules:** Colours come from **tags**, configured in **Settings → Daynest →
 Colours**. A rule matches when an item has *all* of its listed tags; when
 several rules match, the one requiring the *most* tags wins (so a
 `work + meeting` rule beats a plain `work` rule), and ties go to whichever
