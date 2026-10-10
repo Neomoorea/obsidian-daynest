@@ -42,8 +42,41 @@ interface FileCacheEntry {
 export class CalendarStore {
 	private cache = new Map<string, FileCacheEntry>();
 	private listeners = new Set<Listener>();
+	/** Serialize read-modify-write mutations to prevent racing drags from overwriting each other. */
+	private mutationTail: Promise<void> = Promise.resolve();
+	private mutationActive = false;
+	private deferredRefreshPaths = new Set<string>();
+	private deferredFullRefresh = false;
 
 	constructor(private app: App, private getSettings: () => CalendarSettings) {}
+
+	private runMutation<T>(work: () => Promise<T>): Promise<T> {
+		const result = this.mutationTail.then(async () => {
+			this.mutationActive = true;
+			try {
+				return await work();
+			} finally {
+				// Vault create/modify events raised by this mutation (including each
+				// half of a cross-day move) are deferred until all writes and any
+				// rollback have finished. One final notification means views never
+				// render the intermediate state where the source is gone but the
+				// destination has not been written yet.
+				this.mutationActive = false;
+				if (this.deferredFullRefresh) {
+					this.cache.clear();
+				} else {
+					for (const path of this.deferredRefreshPaths) this.cache.delete(path);
+				}
+				this.deferredRefreshPaths.clear();
+				const fullRefresh = this.deferredFullRefresh;
+				this.deferredFullRefresh = false;
+				this.emitChange(fullRefresh);
+			}
+		});
+		// A rejected write must not block later user actions.
+		this.mutationTail = result.then(() => undefined, () => undefined);
+		return result;
+	}
 
 	onChange(fn: Listener): () => void {
 		this.listeners.add(fn);
@@ -56,20 +89,66 @@ export class CalendarStore {
 
 	/** Called by main.ts's vault event listeners when a file changes outside our own writes. */
 	refresh(path?: string): void {
+		if (this.mutationActive) {
+			// Internal vault events are noisy during a move. Defer all of them
+			// until the serialized mutation reaches its final, consistent state.
+			if (path) this.deferredRefreshPaths.add(path);
+			else this.deferredFullRefresh = true;
+			return;
+		}
 		if (path) this.cache.delete(path);
 		this.emitChange(false);
 	}
 
 	/** Called after settings change — working hours, headings, etc. all affect parsing. */
 	invalidateAll(): void {
+		if (this.mutationActive) {
+			this.deferredFullRefresh = true;
+			return;
+		}
 		this.cache.clear();
 		this.emitChange(true);
 	}
 
 	// ---------------------------------------------------------------- reading
 
-	private idFor(filePath: string, section: ManagedSection, index: number): string {
-		return `${filePath}::${section}::${index}`;
+	private idFor(filePath: string, section: ManagedSection, rawLine: string, occurrence: number): string {
+		// Positional IDs break as soon as an event is re-sorted. Dragging then
+		// searches for the old index, can replace a different event, or can fail
+		// to remove the source row during a cross-day move. Identify the row by
+		// its exact Markdown line instead; occurrence disambiguates identical
+		// lines without injecting plugin metadata into the user's note.
+		return JSON.stringify([filePath, section, rawLine, occurrence]);
+	}
+
+	private findItemIndex<T extends CalendarItem>(items: T[], original: T): number {
+		let index = items.findIndex((item) => item.id === original.id && item.kind === original.kind);
+		if (index >= 0) return index;
+
+		// The row may have been re-serialized (e.g. times were zero-padded) since
+		// this view rendered it. Exact raw text remains the safest fallback.
+		index = items.findIndex((item) => item.kind === original.kind && item.rawLine === original.rawLine);
+		if (index >= 0) return index;
+
+		// Last resort for a stale render after a harmless normalization. Never
+		// append on a miss: doing so turns an identity mismatch into a duplicate.
+		return items.findIndex((item) => {
+			if (item.kind !== original.kind || item.title !== original.title || item.allDay !== original.allDay) return false;
+			if (item.kind === "event" && original.kind === "event") {
+				return item.start.hour === original.start.hour && item.start.minute === original.start.minute &&
+					item.end.hour === original.end.hour && item.end.minute === original.end.minute;
+			}
+			if (item.kind === "task" && original.kind === "task") {
+				return item.completed === original.completed &&
+					(item.time?.hour ?? null) === (original.time?.hour ?? null) &&
+					(item.time?.minute ?? null) === (original.time?.minute ?? null);
+			}
+			return false;
+		});
+	}
+
+	private missingItemError(item: CalendarItem): Error {
+		return new Error(`Daynest could not safely find “${item.title}” in ${item.filePath}. No change was made, to avoid duplicating or deleting the wrong item. Refresh the calendar and try again.`);
 	}
 
 	private parseFile(
@@ -94,8 +173,11 @@ export class CalendarStore {
 			if (!range) return;
 			const body = lines.slice(range.bodyStart, range.bodyEnd);
 			const parsed = parseManagedSectionBody(body, settings.workingHoursStart, settings.workingHoursEnd);
-			parsed.items.forEach((item, i) => {
-				const id = this.idFor(file.path, label, i);
+			const occurrences = new Map<string, number>();
+			parsed.items.forEach((item) => {
+				const occurrence = occurrences.get(item.rawLine) ?? 0;
+				occurrences.set(item.rawLine, occurrence + 1);
+				const id = this.idFor(file.path, label, item.rawLine, occurrence);
 				if (item.kind === "event") {
 					events.push({ ...item, id, date: key, filePath: file.path, section: label });
 				} else {
@@ -226,7 +308,6 @@ export class CalendarStore {
 
 		await this.app.vault.modify(file, linesToContent(lines));
 		this.cache.delete(file.path);
-		this.emitChange(false);
 	}
 
 	private async loadEditableLists(
@@ -237,7 +318,14 @@ export class CalendarStore {
 		return { file, events, tasks };
 	}
 
-	async createEvent(
+	createEvent(
+		date: Moment,
+		data: { title: string; start: TimeOfDay; end: TimeOfDay; allDay: boolean; tags?: string[] }
+	): Promise<void> {
+		return this.runMutation(() => this.createEventUnlocked(date, data));
+	}
+
+	private async createEventUnlocked(
 		date: Moment,
 		data: { title: string; start: TimeOfDay; end: TimeOfDay; allDay: boolean; tags?: string[] }
 	): Promise<void> {
@@ -259,9 +347,16 @@ export class CalendarStore {
 		await this.writeFile(file, events, tasks, settings);
 	}
 
-	async createTask(
+	createTask(
 		date: Moment,
-		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[] }
+		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean }
+	): Promise<void> {
+		return this.runMutation(() => this.createTaskUnlocked(date, data));
+	}
+
+	private async createTaskUnlocked(
+		date: Moment,
+		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean }
 	): Promise<void> {
 		const settings = this.getSettings();
 		const { file, events, tasks } = await this.loadEditableLists(date);
@@ -276,12 +371,19 @@ export class CalendarStore {
 			rawLine: "",
 			allDay: data.allDay,
 			time: data.time,
-			completed: false,
+			completed: data.completed ?? false,
 		});
 		await this.writeFile(file, events, tasks, settings);
 	}
 
-	async updateEvent(
+	updateEvent(
+		original: CalendarEventItem,
+		changes: Partial<{ title: string; start: TimeOfDay; end: TimeOfDay; allDay: boolean; tags: string[]; date: Moment }>
+	): Promise<void> {
+		return this.runMutation(() => this.updateEventUnlocked(original, changes));
+	}
+
+	private async updateEventUnlocked(
 		original: CalendarEventItem,
 		changes: Partial<{ title: string; start: TimeOfDay; end: TimeOfDay; allDay: boolean; tags: string[]; date: Moment }>
 	): Promise<void> {
@@ -292,28 +394,52 @@ export class CalendarStore {
 		if (newDateKey === original.date) {
 			const file = await this.getFile(original.filePath);
 			const { events, tasks } = await this.loadListsForFile(file);
-			const idx = events.findIndex((e) => e.id === original.id);
-			if (idx === -1) events.push(merged);
-			else events[idx] = merged;
+			const idx = this.findItemIndex(events, original);
+			if (idx === -1) throw this.missingItemError(original);
+			events[idx] = merged;
 			await this.writeFile(file, events, tasks, settings);
 		} else {
 			const oldFile = await this.getFile(original.filePath);
 			const oldLists = await this.loadListsForFile(oldFile);
-			await this.writeFile(
-				oldFile,
-				oldLists.events.filter((e) => e.id !== original.id),
-				oldLists.tasks,
-				settings
-			);
+			const oldIndex = this.findItemIndex(oldLists.events, original);
+			if (oldIndex === -1) throw this.missingItemError(original);
+			const originalIndex = oldIndex;
+			oldLists.events.splice(oldIndex, 1);
+			await this.writeFile(oldFile, oldLists.events, oldLists.tasks, settings);
 
-			const newFile = await ensureDailyNote(this.app, changes.date as Moment);
-			const newLists = await this.loadListsForFile(newFile);
-			newLists.events.push({ ...merged, filePath: newFile.path });
-			await this.writeFile(newFile, newLists.events, newLists.tasks, settings);
+			try {
+				const newFile = await ensureDailyNote(this.app, changes.date as Moment);
+				const newLists = await this.loadListsForFile(newFile);
+				newLists.events.push({ ...merged, filePath: newFile.path });
+				await this.writeFile(newFile, newLists.events, newLists.tasks, settings);
+			} catch (moveError) {
+				try {
+					const rollbackLists = await this.loadListsForFile(oldFile);
+					rollbackLists.events.splice(Math.min(originalIndex, rollbackLists.events.length), 0, original);
+					await this.writeFile(oldFile, rollbackLists.events, rollbackLists.tasks, settings);
+				} catch (rollbackError) {
+					console.error("Daynest: failed to roll back an event move; check both Daily Notes", rollbackError);
+				}
+				throw moveError;
+			}
 		}
 	}
 
-	async updateTask(
+	updateTask(
+		original: CalendarTaskItem,
+		changes: Partial<{
+			title: string;
+			time: TimeOfDay | null;
+			allDay: boolean;
+			tags: string[];
+			completed: boolean;
+			date: Moment;
+		}>
+	): Promise<void> {
+		return this.runMutation(() => this.updateTaskUnlocked(original, changes));
+	}
+
+	private async updateTaskUnlocked(
 		original: CalendarTaskItem,
 		changes: Partial<{
 			title: string;
@@ -331,24 +457,34 @@ export class CalendarStore {
 		if (newDateKey === original.date) {
 			const file = await this.getFile(original.filePath);
 			const { events, tasks } = await this.loadListsForFile(file);
-			const idx = tasks.findIndex((t) => t.id === original.id);
-			if (idx === -1) tasks.push(merged);
-			else tasks[idx] = merged;
+			const idx = this.findItemIndex(tasks, original);
+			if (idx === -1) throw this.missingItemError(original);
+			tasks[idx] = merged;
 			await this.writeFile(file, events, tasks, settings);
 		} else {
 			const oldFile = await this.getFile(original.filePath);
 			const oldLists = await this.loadListsForFile(oldFile);
-			await this.writeFile(
-				oldFile,
-				oldLists.events,
-				oldLists.tasks.filter((t) => t.id !== original.id),
-				settings
-			);
+			const oldIndex = this.findItemIndex(oldLists.tasks, original);
+			if (oldIndex === -1) throw this.missingItemError(original);
+			const originalIndex = oldIndex;
+			oldLists.tasks.splice(oldIndex, 1);
+			await this.writeFile(oldFile, oldLists.events, oldLists.tasks, settings);
 
-			const newFile = await ensureDailyNote(this.app, changes.date as Moment);
-			const newLists = await this.loadListsForFile(newFile);
-			newLists.tasks.push({ ...merged, filePath: newFile.path });
-			await this.writeFile(newFile, newLists.events, newLists.tasks, settings);
+			try {
+				const newFile = await ensureDailyNote(this.app, changes.date as Moment);
+				const newLists = await this.loadListsForFile(newFile);
+				newLists.tasks.push({ ...merged, filePath: newFile.path });
+				await this.writeFile(newFile, newLists.events, newLists.tasks, settings);
+			} catch (moveError) {
+				try {
+					const rollbackLists = await this.loadListsForFile(oldFile);
+					rollbackLists.tasks.splice(Math.min(originalIndex, rollbackLists.tasks.length), 0, original);
+					await this.writeFile(oldFile, rollbackLists.events, rollbackLists.tasks, settings);
+				} catch (rollbackError) {
+					console.error("Daynest: failed to roll back a task move; check both Daily Notes", rollbackError);
+				}
+				throw moveError;
+			}
 		}
 	}
 
@@ -356,24 +492,24 @@ export class CalendarStore {
 		await this.updateTask(item, { completed: !item.completed });
 	}
 
-	async deleteItem(item: CalendarItem): Promise<void> {
+	deleteItem(item: CalendarItem): Promise<void> {
+		return this.runMutation(() => this.deleteItemUnlocked(item));
+	}
+
+	private async deleteItemUnlocked(item: CalendarItem): Promise<void> {
 		const settings = this.getSettings();
 		const file = await this.getFile(item.filePath);
 		const { events, tasks } = await this.loadListsForFile(file);
 		if (item.kind === "event") {
-			await this.writeFile(
-				file,
-				events.filter((e) => e.id !== item.id),
-				tasks,
-				settings
-			);
+			const index = this.findItemIndex(events, item);
+			if (index === -1) throw this.missingItemError(item);
+			events.splice(index, 1);
+			await this.writeFile(file, events, tasks, settings);
 		} else {
-			await this.writeFile(
-				file,
-				events,
-				tasks.filter((t) => t.id !== item.id),
-				settings
-			);
+			const index = this.findItemIndex(tasks, item);
+			if (index === -1) throw this.missingItemError(item);
+			tasks.splice(index, 1);
+			await this.writeFile(file, events, tasks, settings);
 		}
 	}
 }

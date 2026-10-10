@@ -1,7 +1,7 @@
-import { ItemView, Notice, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type { Moment } from "moment";
 import type DaynestPlugin from "../main";
-import { CalendarEventItem, CalendarSettings, CalendarTaskItem, TimeOfDay, ViewMode } from "../types";
+import { CalendarEventItem, CalendarItem, CalendarSettings, CalendarTaskItem, TimeOfDay, ViewMode } from "../types";
 import { fromDateKey, getWeekDates, minutesToTime, timeToMinutes, today } from "../dateUtils";
 import { ensureDailyNote } from "../dailyNotes";
 import { findOrCreateNoteByTitle, openFileInMode } from "../navigation";
@@ -13,8 +13,12 @@ import { WeekView, DayView } from "./timelineView";
 
 export const VIEW_TYPE_CALENDAR = "daynest-view";
 
+// Preserve the selected anchor while a view is closed/reopened in the same
+// Obsidian session. This module-level value intentionally resets on app restart.
+let lastCalendarAnchorForSession: Moment | null = null;
+
 export class CalendarView extends ItemView implements CalendarHost {
-	private anchor: Moment = today();
+	private anchor: Moment = lastCalendarAnchorForSession?.clone() ?? today();
 	private mode: ViewMode;
 	private headerEl!: HTMLElement;
 	private bodyEl!: HTMLElement;
@@ -25,6 +29,7 @@ export class CalendarView extends ItemView implements CalendarHost {
 		super(leaf);
 		const { defaultView, lastUsedView } = plugin.settings;
 		this.mode = defaultView === "last" ? lastUsedView ?? "month" : defaultView;
+		lastCalendarAnchorForSession = this.anchor.clone();
 	}
 
 	get store() {
@@ -35,12 +40,16 @@ export class CalendarView extends ItemView implements CalendarHost {
 		return VIEW_TYPE_CALENDAR;
 	}
 
+	getCurrentMode(): ViewMode {
+		return this.mode;
+	}
+
 	getDisplayText(): string {
-		return "Calendar";
+		return "Daynest";
 	}
 
 	getIcon(): string {
-		return "calendar-days";
+		return "calendar";
 	}
 
 	getSettings(): CalendarSettings {
@@ -82,6 +91,12 @@ export class CalendarView extends ItemView implements CalendarHost {
 		this.renderBody();
 	}
 
+	/** Re-apply appearance settings and refresh content whose fitted labels depend on those styles. */
+	refreshAppearanceSettings(): void {
+		this.applySettingsClasses();
+		this.refreshBody();
+	}
+
 	private applySettingsClasses(): void {
 		const settings = this.getSettings();
 		const root = this.contentEl;
@@ -89,6 +104,10 @@ export class CalendarView extends ItemView implements CalendarHost {
 		root.classList.add(`dc-density-${settings.eventDensity}`);
 		root.classList.remove("dc-radius-none", "dc-radius-small", "dc-radius-medium", "dc-radius-large");
 		root.classList.add(`dc-radius-${settings.cornerRadius}`);
+		root.classList.remove("dc-style-callout", "dc-style-solid");
+		root.classList.add(`dc-style-${settings.eventStyle}`);
+		root.classList.toggle("dc-high-contrast-event-text", settings.highContrastEventText);
+		root.classList.toggle("dc-strong-event-background-tint", settings.strongEventBackgroundTint);
 	}
 
 	private isRendering = false;
@@ -145,19 +164,18 @@ export class CalendarView extends ItemView implements CalendarHost {
 		});
 
 		const right = this.headerEl.createDiv({ cls: "daily-calendar-nav-group" });
-		const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", attr: { "aria-label": "Previous" } });
-		setIcon(prevBtn, "chevron-left");
+		const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "<", attr: { "aria-label": "Previous" } });
 		prevBtn.addEventListener("click", () => this.step(-1));
 
 		const todayBtn = right.createEl("button", { cls: "daily-calendar-btn", text: "Today" });
 		todayBtn.addEventListener("click", () => this.goToday());
 
-		const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", attr: { "aria-label": "Next" } });
-		setIcon(nextBtn, "chevron-right");
+		const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: ">", attr: { "aria-label": "Next" } });
 		nextBtn.addEventListener("click", () => this.step(1));
 	}
 
 	private formatHeaderTitle(): string {
+		if (this.mode === "day") return this.anchor.format("LL");
 		if (this.mode === "year") return this.anchor.format("YYYY");
 		if (this.mode === "month") return this.anchor.format("MMMM YYYY");
 		if (this.mode === "week") {
@@ -174,11 +192,13 @@ export class CalendarView extends ItemView implements CalendarHost {
 	private step(direction: 1 | -1): void {
 		const unit = this.mode === "year" ? "year" : this.mode === "month" ? "month" : this.mode === "week" ? "week" : "day";
 		this.anchor = this.anchor.clone().add(direction, unit);
+		lastCalendarAnchorForSession = this.anchor.clone();
 		this.renderAll();
 	}
 
 	private goToday(): void {
 		this.anchor = today();
+		lastCalendarAnchorForSession = this.anchor.clone();
 		this.renderAll();
 	}
 
@@ -321,17 +341,59 @@ export class CalendarView extends ItemView implements CalendarHost {
 		}
 	}
 
+	// ------------------------------------------------------------ copy / paste
+	// Held in memory only: nothing is written anywhere until you actually paste.
+
+	private clipboard: CalendarItem | null = null;
+
+	copyItemToClipboard(item: CalendarItem): void {
+		this.clipboard = item;
+	}
+
+	peekClipboard(): CalendarItem | null {
+		return this.clipboard;
+	}
+
+	async pasteClipboardAt(date: Moment, atTime?: TimeOfDay): Promise<void> {
+		const src = this.clipboard;
+		if (!src) return;
+		try {
+			if (src.kind === "event") {
+				// With a target time, keep the duration and shift the start there;
+				// without one (day header / month cell), keep the original times.
+				const duration = timeToMinutes(src.end) - timeToMinutes(src.start);
+				const start = atTime && !src.allDay ? atTime : src.start;
+				const end = atTime && !src.allDay ? minutesToTime(timeToMinutes(atTime) + duration) : src.end;
+				await this.store.createEvent(date, { title: src.title, allDay: src.allDay, start, end, tags: src.tags });
+			} else {
+				const time = atTime && !src.allDay ? atTime : src.time;
+				await this.store.createTask(date, {
+					title: src.title,
+					allDay: src.allDay,
+					time,
+					tags: src.tags,
+					completed: src.completed,
+				});
+			}
+		} catch (e) {
+			console.error("Daynest: failed to paste", e);
+			new Notice("Couldn't paste that — see the developer console for details.");
+		}
+	}
+
 	goTo(anchor: Moment, mode: ViewMode): void {
 		this.anchor = anchor.clone();
+		lastCalendarAnchorForSession = this.anchor.clone();
 		this.setModeInternal(mode);
 		this.renderAll();
 	}
 
-	/** Sets the active mode and, when "Default view" is set to "Last used view", remembers it for next time. */
+	/** Always remember the current mode so selecting "Last used view" later starts from the real last view. */
 	private setModeInternal(mode: ViewMode): void {
 		this.mode = mode;
-		if (this.plugin.settings.defaultView === "last" && this.plugin.settings.lastUsedView !== mode) {
+		if (this.plugin.settings.lastUsedView !== mode) {
 			this.plugin.settings.lastUsedView = mode;
+			// Persist in the background; navigation should repaint immediately.
 			void this.plugin.saveSettings();
 		}
 	}

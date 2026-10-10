@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TextComponent, ToggleComponent } from "obs
 import { CalendarSettings, TimeOfDay } from "./types";
 import { clampTimeOfDay, formatTimeOfDay, minutesToTime, parseTimeString, timeToMinutes } from "./dateUtils";
 import { findOrCreateNoteByTitle } from "./navigation";
+import { extractTagsFromTitle, parseTagList, stripTags, withTags } from "./tags";
 
 export interface EventSaveData {
 	title: string;
@@ -57,21 +58,6 @@ function recomposeTitle(display: string, target: string): string {
 	return disp && disp !== t ? `[[${t}|${disp}]]` : `[[${t}]]`;
 }
 
-/** Appends any tag not already present in the title. Never removes — tags live in the title text itself. */
-function appendMissingTags(title: string, tags: string[]): string {
-	const lower = title.toLowerCase();
-	const toAppend = tags.filter((t) => t.length > 0 && !lower.includes(`#${t.toLowerCase()}`));
-	if (toAppend.length === 0) return title.trim();
-	return `${title.trim()} ${toAppend.map((t) => `#${t}`).join(" ")}`.trim();
-}
-
-function parseTagsField(raw: string): string[] {
-	return raw
-		.split(",")
-		.map((t) => t.trim().replace(/^#/, "").toLowerCase())
-		.filter((t) => t.length > 0);
-}
-
 /** Detects a leading task checkbox typed into the title field, e.g. "- [ ] Buy milk" or "[x] Done thing". */
 function detectTaskPrefix(title: string): { isTask: boolean; completed: boolean; rest: string } | null {
 	const m = /^\s*-?\s*\[\s*([xX]?)\s*\]\s*(.*)$/.exec(title);
@@ -94,6 +80,15 @@ export class ItemEditorModal extends Modal {
 	private linkTarget: string;
 	private linkTargetTouched: boolean;
 	private saving = false;
+	private readonly onWindowKeyDown = (e: KeyboardEvent): void => {
+		if (e.key !== "Escape") return;
+		e.preventDefault();
+		e.stopPropagation();
+		e.stopImmediatePropagation();
+		this.close();
+	};
+	private titleComp!: TextComponent;
+	private tagsComp!: TextComponent;
 
 	private eventTimeRow!: Setting;
 	private taskTimeRow!: Setting;
@@ -112,9 +107,9 @@ export class ItemEditorModal extends Modal {
 		private callbacks: ItemEditorCallbacks
 	) {
 		super(app);
-		const parts = decomposeTitle(initial.title);
+		const parts = decomposeTitle(stripTags(initial.title));
 		this.kind = initial.kind;
-		this.title = parts.display;
+		this.title = withTags(parts.display, initial.tags);
 		this.linkEnabled = parts.target !== null;
 		this.linkTarget = parts.target ?? "";
 		// Only treat it as a deliberate, established alias (and stop auto-syncing)
@@ -132,24 +127,23 @@ export class ItemEditorModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("daily-calendar-editor");
+		window.addEventListener("keydown", this.onWindowKeyDown, true);
 		this.refreshTitleCaption();
 
 		// Title — Enter saves, matching a single-line "quick add" feel.
 		new Setting(contentEl).setName("Title").addText((text) => {
+			this.titleComp = text;
 			text.setValue(this.title).setPlaceholder("Untitled").onChange((v) => {
 				this.title = v;
+				this.tagsRaw = extractTagsFromTitle(v).join(", ");
+				this.tagsComp?.setValue(this.tagsRaw);
 				if (!this.linkTargetTouched) {
-					this.linkTarget = v;
-					this.linkTargetComp?.setValue(v);
+					this.linkTarget = stripTags(v);
+					this.linkTargetComp?.setValue(this.linkTarget);
 				}
 				this.updateLinkPreview();
 			});
-			text.inputEl.addEventListener("keydown", (e) => {
-				if (e.key === "Enter" && !e.shiftKey) {
-					e.preventDefault();
-					void this.handleSave();
-				}
-			});
+			this.bindEnterToSave(text.inputEl);
 			window.setTimeout(() => {
 				text.inputEl.focus();
 				text.inputEl.select();
@@ -166,12 +160,20 @@ export class ItemEditorModal extends Modal {
 					const t = parseTimeString(v);
 					if (t) this.start = t;
 				});
+				this.bindEnterToSave(text.inputEl, () => {
+					const t = parseTimeString(text.inputEl.value);
+					if (t) this.start = t;
+				});
 			})
 			.addText((text) => {
 				text.inputEl.type = "time";
 				text.inputEl.value = formatTimeOfDay(this.end, "24h");
 				text.onChange((v) => {
 					const t = parseTimeString(v);
+					if (t) this.end = t;
+				});
+				this.bindEnterToSave(text.inputEl, () => {
+					const t = parseTimeString(text.inputEl.value);
 					if (t) this.end = t;
 				});
 			});
@@ -181,6 +183,10 @@ export class ItemEditorModal extends Modal {
 			text.inputEl.value = formatTimeOfDay(this.time, "24h");
 			text.onChange((v) => {
 				const t = parseTimeString(v);
+				if (t) this.time = t;
+			});
+			this.bindEnterToSave(text.inputEl, () => {
+				const t = parseTimeString(text.inputEl.value);
 				if (t) this.time = t;
 			});
 		});
@@ -212,8 +218,21 @@ export class ItemEditorModal extends Modal {
 
 		new Setting(contentEl)
 			.setName("Tags")
-			.setDesc("Comma-separated. Adds any tag not already in the title above; existing tags are left untouched.")
-			.addText((text) => text.setValue(this.tagsRaw).setPlaceholder("work, meeting").onChange((v) => (this.tagsRaw = v)));
+			.setDesc("Separate tags with commas, spaces, or #.")
+			.addText((text) => {
+				this.tagsComp = text;
+				text.setValue(this.tagsRaw).setPlaceholder("work, meeting").onChange((v) => {
+					this.tagsRaw = v;
+					this.title = withTags(this.title, parseTagList(v));
+					this.titleComp?.setValue(this.title);
+					if (!this.linkTargetTouched) {
+						this.linkTarget = stripTags(this.title);
+						this.linkTargetComp?.setValue(this.linkTarget);
+					}
+					this.updateLinkPreview();
+				});
+				this.bindEnterToSave(text.inputEl);
+			});
 
 		new Setting(contentEl)
 			.setName("Link to a note")
@@ -249,8 +268,13 @@ export class ItemEditorModal extends Modal {
 					.setButtonText("Delete")
 					.setWarning()
 					.onClick(async () => {
-						await this.callbacks.onDelete?.();
-						this.close();
+						try {
+							await this.callbacks.onDelete?.();
+							this.close();
+						} catch (e) {
+							console.error(`Daynest: failed to delete ${this.kind}`, e);
+							new Notice(`Couldn't delete that ${this.kind} — see the developer console for details.`);
+						}
 					})
 			);
 		}
@@ -265,7 +289,19 @@ export class ItemEditorModal extends Modal {
 		this.updateVisibility();
 	}
 
+	/** Enter saves from every single-line editor control, including native time inputs. */
+	private bindEnterToSave(inputEl: HTMLInputElement, syncValue?: () => void): void {
+		inputEl.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter" || e.shiftKey) return;
+			syncValue?.();
+			e.preventDefault();
+			e.stopPropagation();
+			void this.handleSave();
+		});
+	}
+
 	onClose(): void {
+		window.removeEventListener("keydown", this.onWindowKeyDown, true);
 		this.contentEl.empty();
 	}
 
@@ -299,8 +335,8 @@ export class ItemEditorModal extends Modal {
 		this.completedToggleComp?.setValue(this.completed);
 		if (this.linkEnabled) {
 			if (!this.linkTargetTouched) {
-				this.linkTarget = this.title;
-				this.linkTargetComp?.setValue(this.title);
+				this.linkTarget = stripTags(this.title);
+				this.linkTargetComp?.setValue(this.linkTarget);
 			}
 			this.updateLinkPreview();
 		}
@@ -309,7 +345,7 @@ export class ItemEditorModal extends Modal {
 	/** Shows exactly what will be written, e.g. "→ [[Meeting]]" or "→ [[Meeting 20260918|Meeting]]" when they differ. */
 	private updateLinkPreview(): void {
 		if (!this.linkPreviewEl) return;
-		const display = this.title.trim();
+		const display = stripTags(this.title).trim();
 		const target = (this.linkTarget.trim() || display).trim();
 		if (!target) {
 			this.linkPreviewEl.setText("");
@@ -330,7 +366,7 @@ export class ItemEditorModal extends Modal {
 			this.updateVisibility();
 		}
 
-		if (!this.title.trim()) {
+		if (!stripTags(this.title).trim()) {
 			new Notice(`Give the ${this.kind} a title first.`);
 			return;
 		}
@@ -341,8 +377,8 @@ export class ItemEditorModal extends Modal {
 
 		this.saving = true;
 		try {
-			const tags = parseTagsField(this.tagsRaw);
-			const displayTitle = this.title.trim();
+			const tags = parseTagList(this.tagsRaw);
+			const displayTitle = stripTags(this.title).trim();
 			let finalTitle = displayTitle;
 			if (this.linkEnabled) {
 				// Empty, or exactly matching the title, just means "link to a note
@@ -351,7 +387,7 @@ export class ItemEditorModal extends Modal {
 				await findOrCreateNoteByTitle(this.app, target);
 				finalTitle = recomposeTitle(displayTitle, target);
 			}
-			finalTitle = appendMissingTags(finalTitle, tags);
+			finalTitle = withTags(finalTitle, tags);
 
 			if (this.kind === "event") {
 				await this.callbacks.onSaveEvent({

@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, ColorComponent, PluginSettingTab, Setting, TextComponent } from "obsidian";
 import type DaynestPlugin from "./main";
 import { ColorRule, DefaultViewSetting } from "./types";
 import { formatTimeOfDay, parseTimeString } from "./dateUtils";
@@ -51,6 +51,31 @@ export class DaynestSettingTab extends PluginSettingTab {
 		if (invalidateCache) this.plugin.store.invalidateAll();
 	}
 
+	/** A native colour picker plus a synced hex textbox, since typing a known hex is often faster than the picker. */
+	private addColorAndHex(setting: Setting, initial: string, onChange: (hex: string) => void): void {
+		let hexComp: TextComponent | undefined;
+		let pickerComp: ColorComponent | undefined;
+		setting.addColorPicker((picker) => {
+			pickerComp = picker;
+			picker.setValue(isValidHexColor(initial) ? initial : "#8E8E93").onChange(async (v) => {
+				hexComp?.setValue(v);
+				onChange(v);
+			});
+		});
+		setting.addText((text) => {
+			hexComp = text;
+			text.inputEl.style.width = "88px";
+			text.inputEl.maxLength = 7;
+			text.setPlaceholder("#RRGGBB").setValue(initial).onChange((v) => {
+				const trimmed = v.trim();
+				if (isValidHexColor(trimmed)) {
+					pickerComp?.setValue(trimmed);
+					onChange(trimmed);
+				}
+			});
+		});
+	}
+
 	// ------------------------------------------------------------------ General
 
 	private renderGeneral(containerEl: HTMLElement): void {
@@ -63,6 +88,12 @@ export class DaynestSettingTab extends PluginSettingTab {
 				Object.entries(VIEW_OPTIONS).forEach(([value, label]) => dd.addOption(value, label));
 				dd.setValue(this.plugin.settings.defaultView).onChange(async (value) => {
 					this.plugin.settings.defaultView = value as DefaultViewSetting;
+					if (value === "last") {
+						// Capture the open view immediately when the preference changes,
+						// not only after the user switches views again.
+						const currentMode = this.plugin.getCurrentCalendarMode();
+						if (currentMode) this.plugin.settings.lastUsedView = currentMode;
+					}
 					await this.save(false);
 				});
 			});
@@ -89,10 +120,31 @@ export class DaynestSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Show weekends")
+			.setName("Show weekends in Month view")
+			.setDesc("Ignored for any week that actually has something on a Saturday or Sunday.")
 			.addToggle((t) =>
-				t.setValue(this.plugin.settings.showWeekends).onChange(async (v) => {
-					this.plugin.settings.showWeekends = v;
+				t.setValue(this.plugin.settings.showWeekendsMonth).onChange(async (v) => {
+					this.plugin.settings.showWeekendsMonth = v;
+					await this.save(false);
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Show weekends in Week view")
+			.setDesc("Ignored for a week that actually has something on a Saturday or Sunday.")
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.showWeekendsWeek).onChange(async (v) => {
+					this.plugin.settings.showWeekendsWeek = v;
+					await this.save(false);
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Show weekends in Year view")
+			.setDesc("Ignored for a month that actually has something on a Saturday or Sunday.")
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.showWeekendsYear).onChange(async (v) => {
+					this.plugin.settings.showWeekendsYear = v;
 					await this.save(false);
 				})
 			);
@@ -287,12 +339,34 @@ export class DaynestSettingTab extends PluginSettingTab {
 	private renderColors(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Colours").setHeading();
 
+		this.addColorAndHex(
+			new Setting(containerEl).setName("Default event colour").setDesc("Used when nothing else matches an event's tags."),
+			this.plugin.settings.defaultEventColor,
+			async (v) => {
+				this.plugin.settings.defaultEventColor = v;
+				await this.save(false);
+			}
+		);
+
+		this.addColorAndHex(
+			new Setting(containerEl).setName("Default task colour").setDesc("Used when nothing else matches a task's tags."),
+			this.plugin.settings.defaultTaskColor,
+			async (v) => {
+				this.plugin.settings.defaultTaskColor = v;
+				await this.save(false);
+			}
+		);
+
 		new Setting(containerEl)
-			.setName("Default colour")
-			.setDesc("Used when nothing else matches an item's tags.")
-			.addColorPicker((picker) =>
-				picker.setValue(this.plugin.settings.defaultEventColor).onChange(async (v) => {
-					this.plugin.settings.defaultEventColor = v;
+			.setName("Colour tags using rules")
+			.setDesc(
+				"Colours the #tag badges shown on events/tasks using the same rules below, overriding any colour your " +
+					"theme or a CSS snippet/plugin would otherwise give that tag. Off by default so tags keep looking " +
+					"like ordinary Obsidian tags."
+			)
+			.addToggle((t) =>
+				t.setValue(this.plugin.settings.colorTagsUsingRules).onChange(async (v) => {
+					this.plugin.settings.colorTagsUsingRules = v;
 					await this.save(false);
 				})
 			);
@@ -325,25 +399,23 @@ export class DaynestSettingTab extends PluginSettingTab {
 		const rules = this.plugin.settings.colorRules;
 
 		rules.forEach((rule, index) => {
-			const row = new Setting(listEl)
-				.addText((text) => {
-					text
-						.setPlaceholder("work, meeting")
-						.setValue(rule.tags.join(", "))
-						.onChange(async (value) => {
-							rule.tags = value
-								.split(",")
-								.map((t) => t.trim().replace(/^#/, "").toLowerCase())
-								.filter((t) => t.length > 0);
-							await this.save(false);
-						});
-				})
-				.addColorPicker((picker) =>
-					picker.setValue(isValidHexColor(rule.color) ? rule.color : "#8E8E93").onChange(async (v) => {
-						rule.color = v;
+			const row = new Setting(listEl).addText((text) => {
+				text
+					.setPlaceholder("work, meeting")
+					.setValue(rule.tags.join(", "))
+					.onChange(async (value) => {
+						rule.tags = value
+							.split(",")
+							.map((t) => t.trim().replace(/^#/, "").toLowerCase())
+							.filter((t) => t.length > 0);
 						await this.save(false);
-					})
-				)
+					});
+			});
+			this.addColorAndHex(row, rule.color, async (v) => {
+				rule.color = v;
+				await this.save(false);
+			});
+			row
 				.addExtraButton((btn) =>
 					btn
 						.setIcon("arrow-up")
@@ -388,6 +460,45 @@ export class DaynestSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Appearance").setHeading();
 
 		new Setting(containerEl)
+			.setName("Event style")
+			.setDesc(
+				'"Callout" — a pastel fill with a solid colour bar on the left. "Solid" — the classic fully-coloured ' +
+					"block with white text. Tasks keep their own outline look either way."
+			)
+			.addDropdown((dd) =>
+				dd
+					.addOption("callout", "Callout")
+					.addOption("solid", "Solid")
+					.setValue(this.plugin.settings.eventStyle)
+					.onChange(async (v) => {
+						this.plugin.settings.eventStyle = v as typeof this.plugin.settings.eventStyle;
+						await this.save(false);
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Increase contrast for event text")
+			.setDesc("In Callout style, use normal theme text for event names and muted text for times instead of the event colour, for better readability.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.highContrastEventText).onChange(async (value) => {
+					this.plugin.settings.highContrastEventText = value;
+					await this.save(false);
+					this.plugin.refreshCalendarAppearance();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Use stronger event background tint")
+			.setDesc("Enabled keeps the current, stronger colour tint. Disabled uses a lighter, subtler background in Callout style.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.strongEventBackgroundTint).onChange(async (value) => {
+					this.plugin.settings.strongEventBackgroundTint = value;
+					await this.save(false);
+					this.plugin.refreshCalendarAppearance();
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Event density")
 			.setDesc("Padding and font size inside event blocks.")
 			.addDropdown((dd) =>
@@ -399,6 +510,7 @@ export class DaynestSettingTab extends PluginSettingTab {
 					.onChange(async (v) => {
 						this.plugin.settings.eventDensity = v as typeof this.plugin.settings.eventDensity;
 						await this.save(false);
+						this.plugin.refreshCalendarAppearance();
 					})
 			);
 

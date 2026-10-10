@@ -8,7 +8,10 @@
 	--dc-block-pad-y: 3px;
 	--dc-block-pad-x: 6px;
 	--dc-block-font: 11.5px;
+	--dc-tag-font: 10px;
 	--dc-gutter-width: 56px;
+	--dc-callout-tint: 8%;
+	--dc-callout-hover-tint: 14%;
 
 	height: 100%;
 	display: flex;
@@ -18,16 +21,22 @@
 	color: var(--text-normal);
 	user-select: none;
 }
+.daily-calendar-root.dc-strong-event-background-tint {
+	--dc-callout-tint: 15%;
+	--dc-callout-hover-tint: 24%;
+}
 
 .daily-calendar-root.dc-density-compact {
 	--dc-block-pad-y: 1px;
 	--dc-block-pad-x: 4px;
 	--dc-block-font: 10.5px;
+	--dc-tag-font: 9px;
 }
 .daily-calendar-root.dc-density-spacious {
 	--dc-block-pad-y: 5px;
 	--dc-block-pad-x: 8px;
 	--dc-block-font: 12.5px;
+	--dc-tag-font: 11px;
 }
 .daily-calendar-root.dc-radius-none { --dc-radius-block: 2px; --dc-radius-pill: 2px; }
 .daily-calendar-root.dc-radius-small { --dc-radius-block: 4px; --dc-radius-pill: 3px; }
@@ -40,14 +49,14 @@
 	display: flex;
 	align-items: center;
 	padding: 10px 14px;
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: none;
 	flex: 0 0 auto;
 	gap: 10px;
 }
 
 .daily-calendar-btn {
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
+	background: transparent;
+	border: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
 	color: var(--text-normal);
 	border-radius: 6px;
 	height: 30px;
@@ -59,7 +68,7 @@
 	display: flex;
 	align-items: center;
 }
-.daily-calendar-btn:hover { background: var(--background-modifier-hover); }
+.daily-calendar-btn:hover { background: var(--background-modifier-hover); border-color: var(--background-modifier-border); }
 
 .daily-calendar-nav-group {
 	display: flex;
@@ -83,21 +92,18 @@
 	border-radius: 6px;
 	cursor: pointer;
 	flex: 0 0 auto;
+	font-size: 17px;
+	font-weight: 500;
+	line-height: 1;
 }
-.daily-calendar-icon-btn:hover { background: var(--background-modifier-hover); border-color: var(--background-modifier-border); }
-.daily-calendar-icon-btn svg {
-	width: 18px;
-	height: 18px;
-	stroke: var(--text-normal);
-	stroke-width: 2.25;
-}
+.daily-calendar-icon-btn:hover { background: var(--background-modifier-hover); border-color: transparent; }
 
 .daily-calendar-title {
 	flex: 1 1 0;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	font-size: 15px;
+	font-size: 21px;
 	font-weight: 600;
 	margin-left: 2px;
 	letter-spacing: -0.1px;
@@ -129,6 +135,11 @@
 	color: var(--text-normal);
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
+.daily-calendar-root button:focus-visible,
+.daily-calendar-root [role="button"]:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
 
 .daily-calendar-body {
 	flex: 1 1 auto;
@@ -139,7 +150,7 @@
 }
 
 /* -------------------------------------------------------------- day badge */
-/* Shared "today" circle look, used in Month/Year day numbers and Week/Day headers. */
+/* Shared day-number alignment, used in Month/Year day numbers and Week/Day headers. */
 
 .dc-day-badge,
 .dc-timeline-header-num,
@@ -173,30 +184,34 @@
 
 .dc-pill {
 	display: flex;
+	flex-wrap: nowrap;
 	align-items: center;
-	gap: 4px;
-	padding: 1px 5px;
+	gap: 2px 5px;
+	min-width: 0;
+	overflow: hidden;
+	padding: 1px 6px 1px 5px;
 	border-radius: var(--dc-radius-pill);
-	background: color-mix(in srgb, var(--dc-item-color) 18%, var(--background-primary));
+	background: color-mix(in srgb, var(--dc-item-color) 15%, var(--background-primary));
+	border-left: 3px solid var(--dc-item-color);
 	font-size: 11px;
 	line-height: 1.5;
 	cursor: pointer;
-	overflow: hidden;
-	white-space: nowrap;
 	flex: 0 0 auto;
 }
-.dc-pill:hover { background: color-mix(in srgb, var(--dc-item-color) 28%, var(--background-primary)); }
-.dc-pill-dot {
-	width: 6px;
-	height: 6px;
-	flex: 0 0 6px;
-	border-radius: 50%;
-	background: var(--dc-item-color);
+.dc-pill:hover { background: color-mix(in srgb, var(--dc-item-color) 24%, var(--background-primary)); }
+/* Month/all-day tasks mirror timed task blocks: unfilled surface with a colour outline. */
+.dc-pill-task {
+	background: transparent;
+	border: 1.5px solid var(--dc-item-color);
+	border-left-width: 1.5px;
 }
+.dc-pill-task:hover { background: var(--background-modifier-hover); }
 .dc-pill-label {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	min-width: 0;
+	flex: 1 1 auto;
 	color: var(--text-normal);
 }
 .dc-pill-label.dc-completed { text-decoration-line: line-through; color: var(--text-faint); }
@@ -233,11 +248,11 @@
 	flex: 1 1 0;
 	min-width: 0;
 	text-align: center;
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
-	color: var(--text-faint);
+	text-transform: none;
+	letter-spacing: 0.01em;
+	color: var(--text-normal);
 	padding: 6px 0;
 }
 .dc-month-weeknum-cell {
@@ -253,13 +268,13 @@
 .dc-month-grid .dc-month-row {
 	flex: 1 1 0;
 	min-height: 0;
-	border-bottom: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent);
 }
 .dc-month-grid .dc-month-row:last-child { border-bottom: none; }
 .dc-month-cell {
 	flex: 1 1 0;
 	min-width: 0;
-	border-right: 1px solid var(--background-modifier-border);
+	border-right: 1px solid color-mix(in srgb, var(--background-modifier-border) 42%, transparent);
 	padding: 3px 4px;
 	display: flex;
 	flex-direction: column;
@@ -272,7 +287,7 @@
 .dc-month-cell:hover { background: var(--background-modifier-hover); }
 .dc-month-cell.dc-outside-month { color: var(--text-faint); }
 .dc-month-cell.dc-outside-month .dc-day-badge { color: var(--text-faint); }
-.dc-month-cell.dc-weekend { background: var(--background-secondary); }
+.dc-month-cell.dc-weekend { background: color-mix(in srgb, var(--background-secondary) 35%, var(--background-primary)); }
 .dc-month-cell.dc-drop-target { background: color-mix(in srgb, var(--interactive-accent) 16%, var(--background-primary)); }
 
 .dc-month-cell-header { display: flex; align-items: center; justify-content: space-between; }
@@ -300,7 +315,7 @@
 .dc-year { flex: 1 1 auto; overflow-y: auto; padding: 16px; }
 .dc-year-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 22px; }
 .dc-year-month-title {
-	font-size: 13px;
+	font-size: 14px;
 	font-weight: 600;
 	margin-bottom: 6px;
 	cursor: pointer;
@@ -308,7 +323,7 @@
 }
 .dc-year-month-title:hover { color: var(--interactive-accent); }
 .dc-year-headerrow { display: flex; margin-bottom: 2px; }
-.dc-year-headercell { flex: 1 1 0; text-align: center; font-size: 9px; color: var(--text-faint); }
+.dc-year-headercell { flex: 1 1 0; min-width: 0; text-align: center; font-size: 10.5px; color: var(--text-normal); text-transform: none; }
 .dc-year-row { display: flex; }
 .dc-year-cell {
 	flex: 1 1 0;
@@ -323,12 +338,12 @@
 }
 .dc-year-cell:hover { background: var(--background-modifier-hover); }
 .dc-year-cell.dc-outside-month { visibility: hidden; pointer-events: none; }
-.dc-year-daynum { font-size: 10px; color: var(--text-normal); }
+.dc-year-daynum { font-size: 10.5px; color: var(--text-normal); }
 .dc-year-cell.dc-is-today .dc-year-daynum {
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
-	width: 15px;
-	height: 15px;
+	width: 18px;
+	height: 18px;
 	font-weight: 600;
 }
 .dc-year-dots { display: flex; gap: 1.5px; }
@@ -338,7 +353,7 @@
 
 .dc-timeline { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
 
-.dc-timeline-header { display: flex; border-bottom: 1px solid var(--background-modifier-border); flex: 0 0 auto; }
+.dc-timeline-header { display: flex; border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 62%, transparent); flex: 0 0 auto; }
 .dc-timeline-gutter-spacer {
 	width: var(--dc-gutter-width);
 	flex: 0 0 var(--dc-gutter-width);
@@ -359,7 +374,7 @@
 	cursor: pointer;
 }
 .dc-timeline-header-col:hover { background: var(--background-modifier-hover); }
-.dc-timeline-header-col.dc-weekend { background: var(--background-secondary); }
+.dc-timeline-header-col.dc-weekend { background: color-mix(in srgb, var(--background-secondary) 55%, var(--background-primary)); }
 .dc-timeline-header-line {
 	display: flex;
 	align-items: center;
@@ -367,11 +382,11 @@
 	gap: 6px;
 }
 .dc-timeline-header-dow {
-	font-size: 11px;
+	font-size: 12px;
 	font-weight: 600;
-	text-transform: uppercase;
-	color: var(--text-faint);
-	letter-spacing: 0.02em;
+	text-transform: none;
+	color: var(--text-normal);
+	letter-spacing: 0.01em;
 }
 .dc-timeline-header-num {
 	font-size: 15px;
@@ -401,7 +416,7 @@
 	flex-direction: column;
 	gap: 2px;
 }
-.dc-timeline-allday-col.dc-weekend { background: var(--background-secondary); }
+.dc-timeline-allday-col.dc-weekend { background: color-mix(in srgb, var(--background-secondary) 55%, var(--background-primary)); }
 
 .dc-timeline-scroll { flex: 1 1 auto; overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
 .dc-timeline-grid { position: relative; display: flex; }
@@ -420,37 +435,112 @@
 .dc-timeline-col {
 	position: relative;
 	min-width: 0;
-	border-left: 1px solid color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+	border-left: 1px solid color-mix(in srgb, var(--background-modifier-border) 38%, transparent);
 	cursor: pointer;
 }
 .dc-timeline-col:first-child { border-left: none; }
-.dc-timeline-col.dc-weekend { background: var(--background-secondary); }
-.dc-timeline-col.dc-is-today { background: color-mix(in srgb, var(--interactive-accent) 5%, transparent); }
+.dc-timeline-col.dc-weekend { background: color-mix(in srgb, var(--background-secondary) 55%, var(--background-primary)); }
 .dc-timeline-hourline {
 	position: absolute;
 	left: 0;
 	right: 0;
 	height: 0;
-	border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+	border-top: 1px solid color-mix(in srgb, var(--background-modifier-border) 50%, transparent);
 	pointer-events: none;
 }
 .dc-timeline-hourline-off {
-	border-top-color: color-mix(in srgb, var(--background-modifier-border) 30%, transparent);
+	border-top-color: color-mix(in srgb, var(--background-modifier-border) 20%, transparent);
 }
 
 /* ----------------------------------------------------------------- blocks */
+/* Apple Calendar-style "callout": a solid coloured bar on the left, a pastel
+   tint of the same colour filling the rest of the card, dark/normal text. */
 
 .dc-block {
 	position: absolute;
 	border-radius: var(--dc-radius-block);
-	background: color-mix(in srgb, var(--dc-item-color) 88%, var(--background-primary));
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--dc-item-color) 55%, transparent);
+	background: color-mix(in srgb, var(--dc-item-color) 15%, var(--background-primary));
+	border-left: 3px solid var(--dc-item-color);
 	overflow: hidden;
 	cursor: pointer;
 	z-index: 1;
 }
-.dc-block:hover { z-index: 3; filter: brightness(1.05); }
-.dc-block.dc-dragging { z-index: 10; opacity: 0.85; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+/* In callout mode, inset the colour rail slightly and round its ends subtly,
+   rather than letting it follow the event card's outer corners. */
+.dc-style-callout .dc-block:not(.dc-block-task) {
+	border-left: none;
+	background: color-mix(in srgb, var(--dc-item-color) var(--dc-callout-tint), var(--background-primary));
+}
+.dc-style-callout .dc-block:not(.dc-block-task)::before {
+	content: "";
+	position: absolute;
+	left: 3px;
+	top: 4px;
+	bottom: 4px;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--dc-item-color);
+	pointer-events: none;
+	z-index: 0;
+}
+.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-body {
+	position: relative;
+	z-index: 1;
+	/* Compensate for the removed border so title/tag alignment does not move. */
+	padding-left: calc(var(--dc-block-pad-x) + 3px);
+}
+/* In the default callout style, event text follows the event's chosen colour.
+   Tags are separate elements and deliberately retain their existing styling. */
+.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-label,
+.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-time {
+	color: color-mix(in srgb, var(--dc-item-color) 65%, var(--text-normal));
+}
+.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-time {
+	color: color-mix(in srgb, var(--dc-item-color) 58%, var(--text-normal));
+}
+.dc-style-callout .dc-block:not(.dc-block-task):hover {
+	background: color-mix(in srgb, var(--dc-item-color) var(--dc-callout-hover-tint), var(--background-primary));
+	filter: none;
+}
+
+/* Month and all-day event chips use the same callout treatment as timed events.
+   Tag badges are deliberately excluded from these colour rules. */
+.dc-style-callout .dc-pill:not(.dc-pill-task) {
+	position: relative;
+	border-left: none;
+	padding-left: 8px;
+	background: color-mix(in srgb, var(--dc-item-color) var(--dc-callout-tint), var(--background-primary));
+}
+.dc-style-callout .dc-pill:not(.dc-pill-task)::before {
+	content: "";
+	position: absolute;
+	left: 3px;
+	top: 2px;
+	bottom: 2px;
+	width: 2px;
+	background: var(--dc-item-color);
+	border-radius: 1px;
+	pointer-events: none;
+}
+.dc-style-callout .dc-pill:not(.dc-pill-task) .dc-pill-label {
+	color: color-mix(in srgb, var(--dc-item-color) 65%, var(--text-normal));
+}
+.dc-style-callout .dc-pill:not(.dc-pill-task):hover {
+	background: color-mix(in srgb, var(--dc-item-color) var(--dc-callout-hover-tint), var(--background-primary));
+}
+/* Accessibility option: restore the theme's normal/muted text colours. */
+.dc-high-contrast-event-text.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-label {
+	color: var(--text-normal);
+}
+.dc-high-contrast-event-text.dc-style-callout .dc-block:not(.dc-block-task) .dc-block-time {
+	color: var(--text-muted);
+}
+.dc-high-contrast-event-text.dc-style-callout .dc-pill:not(.dc-pill-task) .dc-pill-label {
+	color: var(--text-normal);
+}
+.dc-block:hover { z-index: 3; filter: brightness(0.97); }
+.theme-dark .dc-block:hover { filter: brightness(1.15); }
+.dc-block.dc-dragging { z-index: 10; opacity: 0.9; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 .dc-block-body {
 	height: 100%;
 	padding: var(--dc-block-pad-y) var(--dc-block-pad-x);
@@ -458,33 +548,144 @@
 	flex-direction: column;
 	gap: 1px;
 	cursor: grab;
+	overflow: hidden;
 }
 .dc-block-label {
 	font-size: var(--dc-block-font);
 	font-weight: 600;
-	color: white;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	color: var(--text-normal);
+	min-width: 0;
 	line-height: 1.25;
+}
+/* Events: title may wrap over several lines — the exact line count is set
+   dynamically in JS (see renderEventContent) based on how much room is
+   actually available, so it never overflows the block and never takes more
+   room than it needs either. */
+.dc-block-label.dc-clamp {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	overflow: hidden;
 }
 .dc-block-label.dc-completed { text-decoration-line: line-through; opacity: 0.7; }
 .dc-block-label.dc-linked { text-decoration-line: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
 .dc-block-label.dc-completed.dc-linked { text-decoration-line: underline line-through; }
-.dc-block-time { font-size: 10px; color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
+
+.dc-block-time { font-size: 10px; color: var(--text-muted); white-space: nowrap; margin-top: 1px; flex-shrink: 0; line-height: 1.2; }
+
+/* Slim events try a single horizontal row before falling back to title + tag row. */
+.dc-block-inline-row {
+	width: 100%;
+	min-width: 0;
+	display: flex;
+	flex-wrap: nowrap;
+	align-items: center;
+	gap: 3px;
+	line-height: 1.25;
+	overflow: hidden;
+}
+.dc-block-label.dc-inline-event-label {
+	/* In very slim blocks, shrink the title before hiding it and always show
+	   an ellipsis when the complete name cannot fit beside the tags. */
+	flex: 0 1 auto;
+	width: auto;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	overflow-wrap: normal;
+}
+.dc-block-inline-row .dc-inline-event-tag { flex: 0 0 auto; }
+
+/* Tags are constrained to one row; the last badge can be ellipsized so time can still fit below. */
+.dc-block-tagline { display: flex; flex-wrap: nowrap; align-items: center; gap: 3px; overflow: hidden; min-width: 0; margin-top: 1px; line-height: 1.35; }
+.dc-block-tagline .dc-tag-badge { display: inline-block; max-width: 100%; vertical-align: middle; }
+.dc-tag-more { font-size: 10px; color: var(--text-muted); flex: 0 0 auto; }
 
 .dc-block-task {
 	background: var(--background-primary);
 	border: 1.5px solid var(--dc-item-color);
+	border-left-width: 1.5px;
 	box-shadow: none;
 }
 .dc-block-task .dc-block-body { flex-direction: row; align-items: center; gap: 4px; padding: 0 5px; }
-.dc-block-task .dc-block-label { color: var(--text-normal); font-size: 10.5px; font-weight: 500; }
+.dc-block-task .dc-block-label {
+	font-size: var(--dc-block-font);
+	font-weight: 500;
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 .dc-block-task .dc-pill-check { flex: 0 0 10px; width: 10px; height: 10px; }
+/* Task titles keep priority; the adjacent tag shortens or becomes # when space is tight. */
+.dc-block-task .dc-tag-badge,
+.dc-block-task .dc-tag-more { margin-left: 2px; }
+.dc-block-task .dc-tag-badge { align-self: center; vertical-align: middle; font-size: var(--dc-tag-font); }
 
-.dc-resize-handle { position: absolute; left: 0; right: 0; height: 6px; cursor: ns-resize; }
-.dc-resize-top { top: -2px; }
-.dc-resize-bottom { bottom: -2px; }
+/* "Solid" event style: classic fully-coloured block with white text, no bar.
+   Tasks are excluded — they keep the same outline look in both styles. */
+.dc-style-solid .dc-block:not(.dc-block-task) {
+	background: color-mix(in srgb, var(--dc-item-color) 85%, var(--background-primary));
+	border-left: none;
+}
+.dc-style-solid .dc-block:not(.dc-block-task) .dc-block-label { color: white; }
+.dc-style-solid .dc-block:not(.dc-block-task) .dc-block-time { color: rgba(255, 255, 255, 0.85); }
+.dc-style-solid .dc-pill:not(.dc-pill-task) {
+	background: color-mix(in srgb, var(--dc-item-color) 85%, var(--background-primary));
+	border-left: none;
+}
+.dc-style-solid .dc-pill:not(.dc-pill-task) .dc-pill-label { color: white; }
+
+/* --------------------------------------------------------------- tag badges */
+/* Deliberately minimal: real Obsidian tags ("a.tag[href=...]"), so any theme
+   or CSS snippet that colours a tag keeps doing so here too. We only ever
+   touch layout, never colour, unless "Colour tags using rules" is on — and
+   even then it's applied inline (see renderTagBadges), not from here. */
+
+.dc-tag-badge {
+	font-size: var(--dc-tag-font);
+	line-height: 1.3;
+	padding: 1px 5px;
+	box-sizing: border-box;
+	white-space: nowrap;
+	flex: 0 0 auto;
+	max-width: 100%;
+	/* Visual only: let clicks, modifier-clicks and drags hit the parent item. */
+	pointer-events: none;
+	cursor: inherit;
+}
+/* One explicit badge metric across timed events, timed tasks, month chips, and all-day chips.
+   Higher specificity neutralizes theme-specific tag sizing without overriding tag colours. */
+.daily-calendar-root .dc-tag-badge {
+	font-size: var(--dc-tag-font) !important;
+	line-height: 1.3 !important;
+	padding: 1px 5px !important;
+	box-sizing: border-box;
+}
+.dc-pill .dc-tag-badge { font-size: var(--dc-tag-font); }
+.dc-pill .dc-pill-tag-hint {
+	display: inline-block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.dc-resize-handle {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 8px;
+	z-index: 5;
+	cursor: ns-resize;
+	touch-action: none;
+	pointer-events: auto;
+}
+.dc-resize-top { top: 0; }
+.dc-resize-bottom { bottom: 0; }
+/* Resize hit areas remain active but intentionally have no visible hover grip. */
 
 .dc-create-preview {
 	background: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
@@ -510,12 +711,29 @@
 	content: "";
 	position: absolute;
 	left: -4px;
-	top: -4px;
+	/* -(border-top-width + dot-height)/2, so the dot's centre lines up with
+	   the 2px line's centre instead of sitting a shade below it. */
+	top: -5px;
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
 	background: var(--color-red, #e03131);
 }
+
+.dc-now-label {
+	position: absolute;
+	right: 8px;
+	left: 0;
+	text-align: right;
+	transform: translateY(-50%);
+	font-size: 10.5px;
+	font-weight: 600;
+	color: var(--color-red, #e03131);
+	white-space: nowrap;
+	pointer-events: none;
+	z-index: 2;
+}
+.dc-hour-hidden { visibility: hidden; }
 
 .dc-drag-tooltip {
 	position: fixed;
@@ -530,6 +748,23 @@
 	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 	pointer-events: none;
 	white-space: nowrap;
+}
+
+.dc-hover-popover {
+	position: fixed;
+	z-index: 1000;
+	max-width: 256px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 5px 9px;
+	font-size: 11.5px;
+	font-weight: 500;
+	line-height: 1.35;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+	pointer-events: none;
+	white-space: normal;
 }
 
 /* ------------------------------------------------------------------ modal */
@@ -559,7 +794,7 @@
 
 @media (max-width: 520px) {
 	.daily-calendar-root { --dc-gutter-width: 40px; }
-	.daily-calendar-title { font-size: 13px; }
+	.daily-calendar-title { font-size: 16px; }
 	.daily-calendar-switch-btn { padding: 4px 8px; font-size: 11.5px; }
 	.dc-month-weeknum-cell { display: none; }
 	.dc-year-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }

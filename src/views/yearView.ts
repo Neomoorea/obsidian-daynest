@@ -2,7 +2,7 @@ import type { Moment } from "moment";
 import { CalendarItem, CalendarSettings } from "../types";
 import { dateKey, getMonthGridWeeks, isToday, orderedWeekdayShortNames } from "../dateUtils";
 import { resolveColor } from "../colorRules";
-import { CalendarHost, CalendarSubView } from "./shared";
+import { CalendarHost, CalendarSubView, defaultColorFor, shouldHideWeekends } from "./shared";
 
 export class YearView implements CalendarSubView {
 	constructor(private host: CalendarHost) {}
@@ -38,13 +38,16 @@ export class YearView implements CalendarSubView {
 
 		const weeks = getMonthGridWeeks(monthAnchor, settings.firstDayOfWeek);
 		const dayNames = orderedWeekdayShortNames(settings.firstDayOfWeek);
-		const hideWeekend = !settings.showWeekends;
+		// Only this month's own days count toward the "weekend has an item" override —
+		// the greyed-out overflow days from neighbouring months aren't shown here.
+		const monthDates = weeks.flat().filter((d) => d.month() === monthAnchor.month());
+		const hideWeekend = shouldHideWeekends(settings.showWeekendsYear, monthDates, itemsByDate);
 
 		const headerRow = box.createDiv({ cls: "dc-year-headerrow" });
 		dayNames.forEach((name, i) => {
 			const dow = (settings.firstDayOfWeek + i) % 7;
 			if (hideWeekend && (dow === 0 || dow === 6)) return;
-			headerRow.createSpan({ cls: "dc-year-headercell", text: name[0] });
+			headerRow.createSpan({ cls: "dc-year-headercell", text: name });
 		});
 
 		weeks.forEach((week) => {
@@ -63,7 +66,7 @@ export class YearView implements CalendarSubView {
 				if (items.length > 0 && inMonth) {
 					const dots = cell.createDiv({ cls: "dc-year-dots" });
 					const colors = Array.from(
-						new Set(items.map((it) => resolveColor(it.tags, settings.colorRules, settings.defaultEventColor)))
+						new Set(items.map((it) => resolveColor(it.tags, settings.colorRules, defaultColorFor(it, settings))))
 					);
 					colors.slice(0, 3).forEach((c) => {
 						const dot = dots.createDiv({ cls: "dc-year-dot" });

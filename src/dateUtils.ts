@@ -22,6 +22,11 @@ export function isToday(m: Moment): boolean {
 	return isSameDay(m, today());
 }
 
+export function isWeekendDate(m: Moment): boolean {
+	const dow = m.day();
+	return dow === 0 || dow === 6;
+}
+
 export function pad2(n: number): string {
 	return n < 10 ? "0" + n : String(n);
 }

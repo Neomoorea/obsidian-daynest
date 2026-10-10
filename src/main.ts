@@ -4,9 +4,19 @@ import { CalendarStore } from "./store";
 import { CalendarView, VIEW_TYPE_CALENDAR } from "./views/calendarView";
 import { DaynestSettingTab } from "./settings";
 
+function freshDefaultSettings(): CalendarSettings {
+	return {
+		...DEFAULT_SETTINGS,
+		workingHoursStart: { ...DEFAULT_SETTINGS.workingHoursStart },
+		workingHoursEnd: { ...DEFAULT_SETTINGS.workingHoursEnd },
+		colorRules: DEFAULT_SETTINGS.colorRules.map((rule) => ({ ...rule, tags: [...rule.tags] })),
+	};
+}
+
 export default class DaynestPlugin extends Plugin {
-	settings: CalendarSettings = DEFAULT_SETTINGS;
+	settings: CalendarSettings = freshDefaultSettings();
 	store!: CalendarStore;
+	private settingsSaveQueue: Promise<void> = Promise.resolve();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -14,13 +24,13 @@ export default class DaynestPlugin extends Plugin {
 
 		this.registerView(VIEW_TYPE_CALENDAR, (leaf) => new CalendarView(leaf, this));
 
-		this.addRibbonIcon("calendar-days", "Open Daynest", () => {
+		this.addRibbonIcon("calendar", "Open Daynest", () => {
 			void this.activateView();
 		});
 
 		this.addCommand({
 			id: "open-calendar",
-			name: "Open calendar",
+			name: "Open Daynest",
 			callback: () => void this.activateView(),
 		});
 		this.addCommand({
@@ -87,14 +97,61 @@ export default class DaynestPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = await this.loadData();
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
-		if (!Array.isArray(this.settings.colorRules)) {
-			this.settings.colorRules = DEFAULT_SETTINGS.colorRules;
-		}
+		const rawData: unknown = await this.loadData();
+		const outer = rawData && typeof rawData === "object" && !Array.isArray(rawData)
+			? (rawData as Record<string, unknown>)
+			: {};
+		// Accept both the normal flat Obsidian data.json shape and the wrapped
+		// { settings: { ... } } shape used by some older/development builds.
+		const isWrapped = !!outer.settings && typeof outer.settings === "object" && !Array.isArray(outer.settings);
+		const data = (isWrapped ? outer.settings : outer) as Partial<CalendarSettings>;
+		this.settings = {
+			...freshDefaultSettings(),
+			...data,
+			workingHoursStart: { ...DEFAULT_SETTINGS.workingHoursStart, ...(data.workingHoursStart ?? {}) },
+			workingHoursEnd: { ...DEFAULT_SETTINGS.workingHoursEnd, ...(data.workingHoursEnd ?? {}) },
+			colorRules: Array.isArray(data.colorRules)
+				? data.colorRules.map((rule) => ({ ...rule, tags: Array.isArray(rule.tags) ? [...rule.tags] : [] }))
+				: freshDefaultSettings().colorRules,
+		};
+		// Rewrite a wrapped legacy shape once into the flat format that Obsidian
+		// and the current plugin use, so the migration itself persists.
+		if (isWrapped) await this.saveSettings();
+	}
+
+	refreshCalendarAppearance(): void {
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0]?.view;
+		if (view instanceof CalendarView) view.refreshAppearanceSettings();
+	}
+
+	private snapshotSettings(): CalendarSettings {
+		return JSON.parse(JSON.stringify(this.settings)) as CalendarSettings;
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+		// Snapshot each write and serialize it. Fast view changes must not race and
+		// let an older settings snapshot overwrite the latest lastUsedView value.
+		const snapshot = this.snapshotSettings();
+		this.settingsSaveQueue = this.settingsSaveQueue
+			.catch(() => undefined)
+			.then(() => this.saveData(snapshot));
+		await this.settingsSaveQueue;
+	}
+
+	onunload(): void {
+		// Flush a final snapshot as a safety net when Obsidian disables the plugin.
+		// This is queued after in-flight writes, so the final/latest values win.
+		const snapshot = this.snapshotSettings();
+		this.settingsSaveQueue = this.settingsSaveQueue
+			.catch(() => undefined)
+			.then(() => this.saveData(snapshot));
+		void this.settingsSaveQueue.catch((error) => {
+			console.error("Daynest: failed to persist settings while unloading", error);
+		});
+	}
+
+	getCurrentCalendarMode(): ViewMode | null {
+		const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)[0]?.view;
+		return view instanceof CalendarView ? view.getCurrentMode() : null;
 	}
 }

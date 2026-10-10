@@ -101,6 +101,7 @@ elsewhere in the same note.
   between a timed event and a checkbox task (it moves it into your
   configured task section on save). Typing a title that starts with
   `- [ ]` or `[x]` does the same thing automatically.
+- **Right-click menu**: Create, Edit, Duplicate, Copy, Paste and Delete events from the contextual menu.
 - **Month view:** hover a day for a small **+** button (quick-add, all-day
   by default); drag an item onto another day to move it; "+N more" opens
   that day in Day view.

@@ -4,6 +4,8 @@
 
 import { CalendarEventItem, CalendarTaskItem, TimeOfDay } from "./types";
 import { timeToMinutes } from "./dateUtils";
+import { extractTagsFromTitle } from "./tags";
+export { stripTags } from "./tags";
 
 export type ParsedItem =
 	| Omit<CalendarEventItem, "id" | "date" | "filePath" | "section">
@@ -13,18 +15,6 @@ export type ParsedItem =
 const TASK_RE = /^\s*-\s*\[([ xX])\]\s*(?:(\d{1,2}):(\d{2})\s+)?(.*)$/;
 // "- 09:00 - 10:00 Team meeting #work"
 const EVENT_RE = /^\s*-\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s+(.+)$/;
-const TAG_RE = /#([^\s#\[\]()]+)/g;
-
-function extractTags(title: string): string[] {
-	const tags: string[] = [];
-	let m: RegExpExecArray | null;
-	TAG_RE.lastIndex = 0;
-	while ((m = TAG_RE.exec(title))) {
-		tags.push(m[1].toLowerCase());
-	}
-	return tags;
-}
-
 function validTime(h: number, m: number): boolean {
 	return h >= 0 && h <= 23 && m >= 0 && m <= 59;
 }
@@ -69,7 +59,7 @@ export function parseLine(
 			time,
 			completed,
 			title,
-			tags: extractTags(title),
+			tags: extractTagsFromTitle(title),
 			rawLine: line,
 		};
 	}
@@ -98,7 +88,7 @@ export function parseLine(
 			start,
 			end,
 			title,
-			tags: extractTags(title),
+			tags: extractTagsFromTitle(title),
 			rawLine: line,
 		};
 	}

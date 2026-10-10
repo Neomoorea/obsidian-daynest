@@ -1,5 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
+import { copyFile, mkdir } from "node:fs/promises";
 import builtins from "builtin-modules";
 
 const banner = `/*
@@ -9,6 +10,13 @@ if you want to view the source, visit the src/ directory
 `;
 
 const prod = process.argv[2] === "production";
+
+// Source stays at the project root; `dist/` is the folder copied into Obsidian.
+await mkdir("dist", { recursive: true });
+await Promise.all([
+	copyFile("manifest.json", "dist/manifest.json"),
+	copyFile("styles.css", "dist/styles.css"),
+]);
 
 const context = await esbuild.context({
 	banner: {
@@ -37,7 +45,7 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	outfile: "main.js",
+	outfile: "dist/main.js",
 	minify: prod,
 });
 

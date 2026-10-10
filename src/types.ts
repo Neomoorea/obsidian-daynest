@@ -32,7 +32,9 @@ export interface CalendarSettings {
 	workingHoursStart: TimeOfDay;
 	workingHoursEnd: TimeOfDay;
 	timeFormat: "12h" | "24h";
-	showWeekends: boolean;
+	showWeekendsMonth: boolean;
+	showWeekendsWeek: boolean;
+	showWeekendsYear: boolean;
 	showWeekNumbers: boolean;
 	showCurrentTimeIndicator: boolean;
 	autoScrollToCurrentTime: boolean;
@@ -49,6 +51,10 @@ export interface CalendarSettings {
 	// Colours
 	colorRules: ColorRule[];
 	defaultEventColor: string;
+	defaultTaskColor: string;
+	/** When true, tag badges are coloured from the same rules as events/tasks,
+	 * overriding any theme or CSS-snippet colouring of that tag. */
+	colorTagsUsingRules: boolean;
 
 	// Opening behaviour
 	dailyNoteOpenMode: OpenMode;
@@ -59,10 +65,16 @@ export interface CalendarSettings {
 	calendarScale: "small" | "medium" | "large";
 	weekendShading: boolean;
 	cornerRadius: "none" | "small" | "medium" | "large";
+	/** "callout": pastel fill + solid colour bar on the left. "solid": fully coloured block with white text (the classic look). */
+	eventStyle: "callout" | "solid";
+	/** When true, callout event titles use normal theme text and times use muted text instead of the event colour. */
+	highContrastEventText: boolean;
+	/** When true, callout events use the original stronger background tint instead of a subtler tint. */
+	strongEventBackgroundTint: boolean;
 }
 
 interface BaseCalendarItem {
-	/** Stable only for the lifetime of a single parse; recomputed every read. */
+	/** Stable for an unchanged Markdown row, even when other rows are reordered. */
 	id: string;
 	kind: ItemKind;
 	/** YYYY-MM-DD, derived from the Daily Note's filename. */
@@ -100,7 +112,7 @@ export const DEFAULT_COLOR_RULES: ColorRule[] = [
 ];
 
 export const DEFAULT_SETTINGS: CalendarSettings = {
-	defaultView: "month",
+	defaultView: "last",
 	lastUsedView: "month",
 	firstDayOfWeek: 1, // Monday, matches Apple Calendar's common default outside the US
 	defaultEventDurationMinutes: 60,
@@ -108,7 +120,9 @@ export const DEFAULT_SETTINGS: CalendarSettings = {
 	workingHoursStart: { hour: 8, minute: 0 },
 	workingHoursEnd: { hour: 18, minute: 0 },
 	timeFormat: "24h",
-	showWeekends: true,
+	showWeekendsMonth: true,
+	showWeekendsWeek: true,
+	showWeekendsYear: true,
 	showWeekNumbers: false,
 	showCurrentTimeIndicator: true,
 	autoScrollToCurrentTime: true,
@@ -122,6 +136,8 @@ export const DEFAULT_SETTINGS: CalendarSettings = {
 
 	colorRules: DEFAULT_COLOR_RULES,
 	defaultEventColor: "#8E8E93",
+	defaultTaskColor: "#8E8E93",
+	colorTagsUsingRules: false,
 
 	dailyNoteOpenMode: "new",
 	linkedNoteOpenMode: "new",
@@ -130,4 +146,7 @@ export const DEFAULT_SETTINGS: CalendarSettings = {
 	calendarScale: "medium",
 	weekendShading: true,
 	cornerRadius: "medium",
+	eventStyle: "callout",
+	highContrastEventText: false,
+	strongEventBackgroundTint: false,
 };

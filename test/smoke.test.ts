@@ -1,4 +1,4 @@
-import { displayTitle, findSection, firstWikilinkTarget, parseLine, parseManagedSectionBody } from "../src/parser";
+import { displayTitle, findSection, firstWikilinkTarget, parseLine, parseManagedSectionBody, stripTags } from "../src/parser";
 import {
 	buildSectionBodyLines,
 	contentToLines,
@@ -11,18 +11,24 @@ import {
 	sortTasks,
 } from "../src/writer";
 import { resolveColor } from "../src/colorRules";
+import { extractTagsFromTitle, parseTagList, withTags } from "../src/tags";
+import { CalendarStore } from "../src/store";
+import { TFile } from "obsidian";
+import { DEFAULT_SETTINGS } from "../src/types";
 import { layoutOverlaps } from "../src/views/overlapLayout";
+import { shouldHideWeekends } from "../src/views/shared";
 import {
 	dateKey,
 	formatTimeOfDay,
 	fromDateKey,
 	getMonthGridWeeks,
 	getWeekDates,
+	isWeekendDate,
 	minutesToTime,
 	parseTimeString,
 	timeToMinutes,
 } from "../src/dateUtils";
-import { ColorRule, TimeOfDay } from "../src/types";
+import { CalendarItem, ColorRule, TimeOfDay } from "../src/types";
 
 let pass = 0;
 let fail = 0;
@@ -104,6 +110,21 @@ eq(displayTitle("[[Project meeting]]"), "Project meeting", "displayTitle strips 
 eq(displayTitle("[[Note|Alias]]"), "Alias", "displayTitle shows the alias, not the raw target, when present");
 eq(displayTitle("Prep for [[Project meeting]] #work"), "Prep for Project meeting #work", "displayTitle works on embedded links too");
 eq(displayTitle("No link here"), "No link here", "displayTitle is a no-op without a wikilink");
+
+eq(stripTags("Team meeting #work #urgent"), "Team meeting", "stripTags removes trailing tags");
+eq(stripTags("#work Team meeting"), "Team meeting", "stripTags removes leading tags too");
+eq(stripTags("Team meeting"), "Team meeting", "stripTags is a no-op without any tags");
+eq(stripTags("Re: #work stuff #later"), "Re: stuff", "stripTags removes every tag occurrence, wherever it sits");
+eq(extractTagsFromTitle("Planning #work #meeting #Work"), ["work", "meeting"], "title tags normalize and deduplicate in order");
+eq(parseTagList("#Personal, work, PERSONAL"), ["personal", "work"], "Tags field normalizes and deduplicates");
+eq(parseTagList("tag1 tag2"), ["tag1", "tag2"], "Tags field accepts spaces as separators");
+eq(parseTagList("#tag1#tag2"), ["tag1", "tag2"], "Tags field accepts hashtag markers as separators");
+eq(parseTagList("tag1, tag2"), ["tag1", "tag2"], "Tags field accepts comma separators");
+eq(withTags("Planning #work", ["meeting"]), "Planning #meeting", "replacing a tag removes the old title tag");
+eq(withTags("[[Project|Planning]] #work", []), "[[Project|Planning]]", "an empty tag set removes all tags while preserving a wikilink");
+eq(extractTagsFromTitle(withTags("Planning #old", parseTagList("new, urgent"))), ["new", "urgent"], "saved title tags match complete Tags-field replacement");
+eq(withTags("Planning #old", parseTagList("")), "Planning", "clearing the Tags field removes title hashtags");
+
 
 // ---------------------------------------------------------------- sections
 
@@ -303,6 +324,29 @@ eq(formatTimeOfDay({ hour: 12, minute: 0 }, "24h"), "12:00", "24h format is neve
 	eq(week.length, 7, "getWeekDates returns 7 dates");
 	eq(dateKey(week[0]), "2026-09-14", "week starting Monday for a Tuesday anchor");
 }
+
+eq(isWeekendDate(fromDateKey("2026-09-19")), true, "Saturday is a weekend date");
+eq(isWeekendDate(fromDateKey("2026-09-20")), true, "Sunday is a weekend date");
+eq(isWeekendDate(fromDateKey("2026-09-21")), false, "Monday is not a weekend date");
+
+{
+	const mkItem = (id: string): CalendarItem =>
+		({ id, kind: "task", allDay: true, time: null, completed: false, date: "", filePath: "", section: "tasks", title: "x", tags: [], rawLine: "" } as CalendarItem);
+	const week = getWeekDates(fromDateKey("2026-09-15"), 1); // Mon 14 .. Sun 20
+	const emptyItems = new Map<string, CalendarItem[]>();
+	eq(shouldHideWeekends(false, week, emptyItems), true, "setting off + nothing on the weekend: weekends are hidden");
+	eq(shouldHideWeekends(true, week, emptyItems), false, "setting on: weekends are never hidden regardless of items");
+
+	const withSaturdayItem = new Map<string, CalendarItem[]>([[dateKey(week[5]), [mkItem("a")]]]); // Sat
+	eq(shouldHideWeekends(false, week, withSaturdayItem), false, "an item on Saturday alone overrides the hide-weekends setting for the whole week");
+
+	const withSundayItem = new Map<string, CalendarItem[]>([[dateKey(week[6]), [mkItem("b")]]]); // Sun
+	eq(shouldHideWeekends(false, week, withSundayItem), false, "an item on Sunday alone also overrides it");
+
+	const weekdayOnly = new Map<string, CalendarItem[]>([[dateKey(week[2]), [mkItem("c")]]]); // Wed
+	eq(shouldHideWeekends(false, week, weekdayOnly), true, "a weekday item does not override — weekends stay hidden");
+}
+
 {
 	const merged = sortMixedSection([
 		{ id: "1", kind: "event", allDay: false, start: { hour: 9, minute: 0 }, end: { hour: 10, minute: 0 } } as any,
@@ -314,5 +358,117 @@ eq(formatTimeOfDay({ hour: 12, minute: 0 }, "24h"), "12:00", "24h format is neve
 
 // --------------------------------------------------------------------- done
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail > 0 ? 1 : 0);
+async function runStoreIdentityRegressions(): Promise<void> {
+	const makeFile = (path: string, content: string): any => Object.assign(Object.create(TFile.prototype), {
+		path,
+		basename: path.split("/").pop()!.replace(/\.md$/, ""),
+		stat: { mtime: 1 },
+		content,
+	});
+	const source = makeFile("2026-10-07.md", "# 2026-10-07\n\n## Events\n- 09:00 - 10:00 Standup #work\n- 13:00 - 14:00 Review #team\n");
+	const destination = makeFile("2026-10-08.md", "# 2026-10-08\n\n## Events\n- 15:00 - 16:00 Existing #personal\n");
+	const files = new Map([[source.path, source], [destination.path, destination]]);
+	const app: any = { vault: {
+		getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+		read: async (file: any) => file.content,
+		modify: async (file: any, content: string) => { file.content = content; file.stat.mtime += 1; },
+		create: async (path: string, content: string) => { const file = makeFile(path, content); files.set(path, file); return file; },
+		createFolder: async () => undefined,
+	} };
+	const store = new CalendarStore(app, () => DEFAULT_SETTINGS);
+	const parse = (file: any) => (store as any).parseFile(file, file.content, DEFAULT_SETTINGS);
+
+	// Simulate a second view or vault refresh reordering the note between render and drop.
+	const original = parse(source).events.find((item: any) => item.title.startsWith("Standup"));
+	if (!original) throw new Error("Identity regression setup failed: Standup missing.");
+	source.content = "# 2026-10-07\n\n## Events\n- 13:00 - 14:00 Review #team\n- 09:00 - 10:00 Standup #work\n";
+	source.stat.mtime += 1;
+	eq((parse(source).events.find((item: any) => item.title.startsWith("Standup")))?.id, original.id,
+		"event identity survives a reorder between render and drag");
+	await store.updateEvent(original, { date: fromDateKey("2026-10-08"), start: { hour: 10, minute: 0 }, end: { hour: 11, minute: 0 } });
+	const sourceAfterMove = parse(source).events;
+	const destinationAfterMove = parse(destination).events;
+	eq(sourceAfterMove.map((item: any) => item.title), ["Review #team"], "cross-day drag removes the original source row");
+	eq(destinationAfterMove.map((item: any) => item.title), ["Standup #work", "Existing #personal"], "cross-day drag adds exactly one destination row");
+	eq(destinationAfterMove.find((item: any) => item.title.startsWith("Standup"))?.start, { hour: 10, minute: 0 }, "drag preserves event title and writes the requested time");
+	eq(destinationAfterMove.find((item: any) => item.title.startsWith("Standup"))?.tags, ["work"], "drag preserves event tags");
+
+	// A stale reference must delete its matching event after a reorder, not whichever row inherited its old index.
+	source.content = "# 2026-10-07\n\n## Events\n- 09:00 - 10:00 Standup #work\n- 13:00 - 14:00 Review #team\n";
+	source.stat.mtime += 1;
+	const staleStandup = parse(source).events.find((item: any) => item.title.startsWith("Standup"));
+	if (!staleStandup) throw new Error("Identity regression setup failed: Standup missing before delete.");
+	source.content = "# 2026-10-07\n\n## Events\n- 13:00 - 14:00 Review #team\n- 09:00 - 10:00 Standup #work\n";
+	source.stat.mtime += 1;
+	await store.deleteItem(staleStandup);
+	eq(parse(source).events.map((item: any) => item.title), ["Review #team"], "deleting a stale event reference removes the intended event after reordering");
+
+	let refusedMissingUpdate = false;
+	try {
+		await store.updateEvent(staleStandup, { start: { hour: 10, minute: 0 }, end: { hour: 11, minute: 0 } });
+	} catch {
+		refusedMissingUpdate = true;
+	}
+	ok(refusedMissingUpdate, "a missing stale event is refused rather than silently recreated as a duplicate");
+	eq(parse(source).events.map((item: any) => item.title), ["Review #team"], "failed stale update leaves the note unchanged");
+}
+
+async function runStoreConcurrencyAndRollbackRegressions(): Promise<void> {
+	const makeFile = (path: string, content: string): any => Object.assign(Object.create(TFile.prototype), {
+		path,
+		basename: path.split("/").pop()!.replace(/\.md$/, ""),
+		stat: { mtime: 1 },
+		content,
+	});
+	const source = makeFile("2026-10-12.md", "# 2026-10-12\n\n## Events\n- 09:00 - 10:00 Standup #work\n- 13:00 - 14:00 Review #team\n");
+	const destination = makeFile("2026-10-13.md", "# 2026-10-13\n\n## Events\n- 15:00 - 16:00 Existing #personal\n");
+	const files = new Map([[source.path, source], [destination.path, destination]]);
+	let failDestinationWrites = false;
+	const app: any = { vault: {
+		getAbstractFileByPath: (path: string) => files.get(path) ?? null,
+		read: async (file: any) => file.content,
+		modify: async (file: any, content: string) => {
+			if (failDestinationWrites && file.path === destination.path) throw new Error("simulated destination disk failure");
+			file.content = content;
+			file.stat.mtime += 1;
+		},
+		create: async (path: string, content: string) => { const file = makeFile(path, content); files.set(path, file); return file; },
+		createFolder: async () => undefined,
+	} };
+	const store = new CalendarStore(app, () => DEFAULT_SETTINGS);
+	const parse = (file: any) => (store as any).parseFile(file, file.content, DEFAULT_SETTINGS);
+
+	const initial = parse(source).events;
+	const standup = initial.find((item: any) => item.title.startsWith("Standup"));
+	const review = initial.find((item: any) => item.title.startsWith("Review"));
+	if (!standup || !review) throw new Error("Concurrency regression setup failed: initial events missing.");
+	await Promise.all([
+		store.updateEvent(standup, { start: { hour: 9, minute: 15 }, end: { hour: 10, minute: 15 } }),
+		store.updateEvent(review, { title: "Review revised #team" }),
+	]);
+	const afterConcurrentEdits = parse(source).events;
+	eq(afterConcurrentEdits.map((item: any) => item.title), ["Standup #work", "Review revised #team"], "concurrent store mutations preserve both event edits");
+	eq(afterConcurrentEdits.find((item: any) => item.title.startsWith("Standup"))?.start, { hour: 9, minute: 15 }, "first concurrent edit persists its time change");
+
+	const moving = afterConcurrentEdits.find((item: any) => item.title.startsWith("Standup"));
+	if (!moving) throw new Error("Rollback regression setup failed: Standup missing.");
+	failDestinationWrites = true;
+	let refusedMove = false;
+	try {
+		await store.updateEvent(moving, { date: fromDateKey("2026-10-13"), start: { hour: 11, minute: 0 }, end: { hour: 12, minute: 0 } });
+	} catch (error) {
+		refusedMove = error instanceof Error && error.message.includes("simulated destination disk failure");
+	}
+	failDestinationWrites = false;
+	ok(refusedMove, "destination write error is reported to the caller");
+	eq(parse(source).events.map((item: any) => item.title), ["Standup #work", "Review revised #team"], "failed cross-day move rolls back the source event instead of losing it");
+	eq(parse(destination).events.map((item: any) => item.title), ["Existing #personal"], "failed cross-day move does not leave a duplicate in destination note");
+}
+
+void runStoreIdentityRegressions().then(runStoreConcurrencyAndRollbackRegressions).then(() => {
+	console.log(`\n${pass} passed, ${fail} failed`);
+	process.exit(fail > 0 ? 1 : 0);
+}).catch((error) => {
+	console.error("Store mutation regression failed:", error);
+	process.exit(1);
+});
