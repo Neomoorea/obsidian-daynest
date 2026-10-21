@@ -19,9 +19,9 @@ export function formatEventLine(
 }
 
 export function formatTaskLine(
-	item: Pick<CalendarTaskItem, "allDay" | "time" | "completed" | "title">
+	item: Pick<CalendarTaskItem, "allDay" | "time" | "completed" | "title" | "checkboxStatus">
 ): string {
-	const box = item.completed ? "x" : " ";
+	const box = item.checkboxStatus ?? (item.completed ? "x" : " ");
 	if (item.allDay || !item.time) {
 		return `- [${box}] ${item.title}`.trimEnd();
 	}

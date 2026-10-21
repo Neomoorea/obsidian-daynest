@@ -65,6 +65,7 @@ completely untouched.
 | Timed task | `- [ ] HH:MM Title` | `- [ ] 15:30 Buy groceries #personal` |
 
 A completed task uses `- [x]` instead of `- [ ]`.
+Daynest also recognises other single-character task markers, including [/], [?], [!], and [-]. These statuses are preserved when tasks are edited, and their visual appearance can follow the active Obsidian theme.
 
 - **Tags** are just ordinary inline `#tags` anywhere in the title — they
   double as the input to colour rules (see below).
@@ -89,14 +90,14 @@ elsewhere in the same note.
 
 - **Ribbon icon** or **command palette → "Open calendar"** opens the
   calendar in a new tab.
-- **Year/Month/Week/Day** switcher, **Today** button, and **◀ ▶** arrows in
+- **Year/Month/Week/Day** switcher, **Today** button, and **‹ ›** arrows in
   the header. Set **Default view** to "Last used view" in Settings if you'd rather it
   reopen wherever you left it than always the same view.
 - **Click a date** (Month/Year) or a **day header** (Week/Day) to open that
   day's Daily Note, creating it from your template if it doesn't exist yet.
 - **Click an event or task** to edit it; **Cmd/Ctrl-click** a linked one to
   open its note instead (linked items display their clean title, not the
-  `[[brackets]]`). A **✓** on a task toggles it complete directly.
+  `[[brackets]]`). Click a task checkbox to toggle its status.
 - **The editor** has a **Task** toggle that converts what you're creating
   between a timed event and a checkbox task (it moves it into your
   configured task section on save). Typing a title that starts with
@@ -129,7 +130,7 @@ creates that note first, from your template, with `{{date}}`, `{{date:
 FORMAT}}`, `{{time}}`, and `{{title}}` substituted — then opens it according
 to your "Open Daily Note in" setting.
 
-## Installing it
+## Installation
 
 ### Requirements
 
@@ -164,9 +165,7 @@ npm install
 npm run build
 ```
 
-This produces `main.js` next to `manifest.json` and `styles.css` at the
-project root — copy those three files into `.obsidian/plugins/daynest/`
-as above. `npm run dev` runs an incremental watch build if you want to
+This produces the plugin files in `dist/` (`main.js`, `manifest.json`, and `styles.css`). Copy these three files into `.obsidian/plugins/daynest/` inside your vault. `npm run dev` runs an incremental watch build if you want to
 modify the plugin.
 
 ## License

@@ -27,6 +27,7 @@ import {
 	shouldHideWeekends,
 	showEmptyContextMenu,
 	showItemContextMenu,
+	renderTaskCheckbox,
 	handleCalendarAction,
 } from "./shared";
 
@@ -416,12 +417,10 @@ export class TimelineBaseView implements CalendarSubView {
 		let clearClickSuppression: number | null = null;
 		let captureSuppressedClick: ((event: MouseEvent) => void) | null = null;
 		if (isTask) {
-			const check = body.createDiv({ cls: "dc-pill-check" + (item.completed ? " is-checked" : "") });
-			check.addEventListener("mousedown", (e) => e.stopPropagation());
-			check.addEventListener("click", (e) => {
-				e.stopPropagation();
-				void this.host.toggleTask(item);
+			const check = renderTaskCheckbox(body, this.host.app, item, (checked) => {
+				void this.host.toggleTask(item, checked);
 			});
+			check.style.setProperty("--dc-item-color", resolveColor(item.tags, settings.colorRules, defaultColorFor(item, settings)));
 			this.renderTaskContent(body, item, settings);
 		} else {
 			this.renderEventContent(el, body, item, settings);
@@ -643,11 +642,14 @@ export class TimelineBaseView implements CalendarSubView {
 		// otherwise the shared helper substitutes one # marker. Hover remains one
 		// block-level popover containing the complete title and all tag names.
 		const fullDisplayTitle = displayTitle(item.title);
-		if (item.tags.length > 0) {
-			this.attachHoverPopover(body, fullDisplayTitle);
-		} else if (label.scrollWidth > label.clientWidth + 1) {
-			this.attachHoverPopover(body, fullDisplayTitle);
-		}
+		this.attachHoverPopover(body, fullDisplayTitle, () => {
+			const titleIsClipped = label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1;
+			const visibleTags = Array.from(body.querySelectorAll<HTMLElement>(".dc-task-full-tag"));
+			const tagsAreHidden = visibleTags.length !== item.tags.length || visibleTags.some((badge, index) =>
+				badge.textContent !== `#${item.tags[index]}` || badge.scrollWidth > badge.clientWidth + 1
+			);
+			return titleIsClipped || tagsAreHidden;
+		});
 	}
 
 	/**
@@ -696,7 +698,7 @@ export class TimelineBaseView implements CalendarSubView {
 	}
 
 	/** A small popover with the full, untruncated text — shown after a short hover delay, matching the drag tooltip's visual language. */
-	private attachHoverPopover(el: HTMLElement, text: string): void {
+	private attachHoverPopover(el: HTMLElement, text: string, shouldShow: () => boolean = () => true): void {
 		let popover: HTMLElement | null = null;
 		let timer: number | null = null;
 		let observer: MutationObserver | null = null;
@@ -719,7 +721,7 @@ export class TimelineBaseView implements CalendarSubView {
 				timer = null;
 				// Timeline refreshes can detach a block during this delay. Don't
 				// create a popover for a stale element (whose rectangle is 0, 0).
-				if (!hovered || !el.isConnected) return;
+				if (!hovered || !el.isConnected || !shouldShow()) return;
 				popover = document.body.createDiv({ cls: "dc-hover-popover", text });
 				const rect = el.getBoundingClientRect();
 				popover.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - 272))}px`;

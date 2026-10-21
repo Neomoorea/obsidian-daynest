@@ -101,6 +101,8 @@ export interface CalendarTaskItem extends BaseCalendarItem {
 	allDay: boolean;
 	time: TimeOfDay | null;
 	completed: boolean;
+	/** Original Markdown checkbox marker (space, x, /, ?, !, -, etc.). */
+	checkboxStatus?: string;
 }
 
 export type CalendarItem = CalendarEventItem | CalendarTaskItem;

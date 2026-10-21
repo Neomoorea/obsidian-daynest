@@ -666,7 +666,7 @@ function freshDefaultSettings() {
         ...types_1.DEFAULT_SETTINGS,
         workingHoursStart: { ...types_1.DEFAULT_SETTINGS.workingHoursStart },
         workingHoursEnd: { ...types_1.DEFAULT_SETTINGS.workingHoursEnd },
-        colorRules: types_1.DEFAULT_SETTINGS.colorRules.map((rule) => ({ ...rule, tags: [...rule.tags] }))
+        colorRules: types_1.DEFAULT_SETTINGS.colorRules.map((rule) => ({ ...rule, tags: [...rule.tags] })),
     };
 }
 class DaynestPlugin extends obsidian_1.Plugin {
@@ -746,6 +746,7 @@ class DaynestPlugin extends obsidian_1.Plugin {
         this.app.workspace.revealLeaf(leaf);
     }
     async loadSettings() {
+        var _a, _b;
         const rawData = await this.loadData();
         const outer = rawData && typeof rawData === "object" && !Array.isArray(rawData)
             ? rawData
@@ -753,15 +754,15 @@ class DaynestPlugin extends obsidian_1.Plugin {
         // Accept both the normal flat Obsidian data.json shape and the wrapped
         // { settings: { ... } } shape used by some older/development builds.
         const isWrapped = !!outer.settings && typeof outer.settings === "object" && !Array.isArray(outer.settings);
-        const data = isWrapped ? outer.settings : outer;
+        const data = (isWrapped ? outer.settings : outer);
         this.settings = {
             ...freshDefaultSettings(),
             ...data,
-            workingHoursStart: { ...types_1.DEFAULT_SETTINGS.workingHoursStart, ...(data.workingHoursStart || {}) },
-            workingHoursEnd: { ...types_1.DEFAULT_SETTINGS.workingHoursEnd, ...(data.workingHoursEnd || {}) },
+            workingHoursStart: { ...types_1.DEFAULT_SETTINGS.workingHoursStart, ...((_a = data.workingHoursStart) !== null && _a !== void 0 ? _a : {}) },
+            workingHoursEnd: { ...types_1.DEFAULT_SETTINGS.workingHoursEnd, ...((_b = data.workingHoursEnd) !== null && _b !== void 0 ? _b : {}) },
             colorRules: Array.isArray(data.colorRules)
                 ? data.colorRules.map((rule) => ({ ...rule, tags: Array.isArray(rule.tags) ? [...rule.tags] : [] }))
-                : freshDefaultSettings().colorRules
+                : freshDefaultSettings().colorRules,
         };
         // Rewrite a wrapped legacy shape once into the flat format that Obsidian
         // and the current plugin use, so the migration itself persists.
@@ -849,9 +850,9 @@ async function findOrCreateNoteByTitle(app, title) {
 },
 "src/parser.js": function(module, exports, require) {
 "use strict";
-// A deliberately strict parser: only the four documented syntaxes are ever
-// recognised as calendar items. Everything else is left untouched and is
-// reported back as a "foreign" line so the writer can preserve it.
+// A deliberately strict parser: only documented calendar item syntaxes are
+// recognised. Any single-character Markdown task checkbox status is supported;
+// everything else remains a foreign line and is preserved by the writer.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.stripTags = void 0;
 exports.parseLine = parseLine;
@@ -863,17 +864,17 @@ const dateUtils_1 = require("./dateUtils");
 const tags_1 = require("./tags");
 var tags_2 = require("./tags");
 Object.defineProperty(exports, "stripTags", { enumerable: true, get: function () { return tags_2.stripTags; } });
-// "- [ ] 15:30 Buy groceries #personal"  or  "- [x] Buy milk"
-const TASK_RE = /^\s*-\s*\[([ xX])\]\s*(?:(\d{1,2}):(\d{2})\s+)?(.*)$/;
+// "- [ ] 15:30 Buy groceries #personal", "- [x] Buy milk", "- [/] In progress"
+const TASK_RE = /^\s*-\s*\[([^\]])\]\s*(?:(\d{1,2}):(\d{2})\s+)?(.*)$/;
 // "- 09:00 - 10:00 Team meeting #work"
 const EVENT_RE = /^\s*-\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s+(.+)$/;
 function validTime(h, m) {
     return h >= 0 && h <= 23 && m >= 0 && m <= 59;
 }
 /**
- * Parse a single Markdown line. Returns null if the line does not match one
- * of the four documented calendar syntaxes exactly — such lines are ordinary
- * Markdown and must be preserved verbatim by the caller.
+ * Parse a single Markdown line. A task checkbox may use any single-character
+ * status marker so custom Obsidian themes can render it in the calendar too.
+ * Unrecognised lines remain ordinary Markdown and are preserved verbatim.
  */
 function parseLine(line, workingHoursStart, workingHoursEnd) {
     const taskMatch = TASK_RE.exec(line);
@@ -892,7 +893,7 @@ function parseLine(line, workingHoursStart, workingHoursEnd) {
                 // Not a real clock time (e.g. "99:99") — the digits were part of
                 // the title, not a time prefix. Re-derive the title from the
                 // original line so nothing is lost.
-                const fallback = /^\s*-\s*\[[ xX]\]\s*(.*)$/.exec(line);
+                const fallback = /^\s*-\s*\[[^\]]\]\s*(.*)$/.exec(line);
                 titleSource = fallback ? fallback[1] : rest;
             }
         }
@@ -904,6 +905,7 @@ function parseLine(line, workingHoursStart, workingHoursEnd) {
             allDay: time === null,
             time,
             completed,
+            checkboxStatus: box,
             title,
             tags: (0, tags_1.extractTagsFromTitle)(title),
             rawLine: line,
@@ -1017,15 +1019,39 @@ const OPEN_MODE_OPTIONS = {
 class DaynestSettingTab extends obsidian_1.PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
+        this.activeCategory = "general";
         this.plugin = plugin;
     }
     display() {
+        var _a;
         const { containerEl } = this;
         containerEl.empty();
-        this.renderGeneral(containerEl);
-        this.renderDailyNotes(containerEl);
-        this.renderColors(containerEl);
-        this.renderAppearance(containerEl);
+        const tabsEl = containerEl.createDiv({
+            cls: "daily-calendar-settings-tabs",
+            attr: { role: "tablist" },
+        });
+        const contentEl = containerEl.createDiv({ cls: "daily-calendar-settings-content" });
+        const categories = [
+            { id: "general", label: "General", render: () => this.renderGeneral(contentEl) },
+            { id: "daily-notes", label: "Daily Notes", render: () => this.renderDailyNotes(contentEl) },
+            { id: "colours", label: "Colours", render: () => this.renderColors(contentEl) },
+            { id: "appearance", label: "Appearance", render: () => this.renderAppearance(contentEl) },
+        ];
+        for (const category of categories) {
+            const active = this.activeCategory === category.id;
+            const button = tabsEl.createEl("button", {
+                cls: "daily-calendar-settings-tab" + (active ? " is-active" : ""),
+                text: category.label,
+                attr: { type: "button", role: "tab", "aria-selected": String(active) },
+            });
+            button.addEventListener("click", () => {
+                if (this.activeCategory === category.id)
+                    return;
+                this.activeCategory = category.id;
+                this.display();
+            });
+        }
+        (_a = categories.find((category) => category.id === this.activeCategory)) === null || _a === void 0 ? void 0 : _a.render();
     }
     async save(invalidateCache = true) {
         await this.plugin.saveSettings();
@@ -1721,6 +1747,7 @@ class CalendarStore {
             allDay: data.allDay,
             time: data.time,
             completed: (_b = data.completed) !== null && _b !== void 0 ? _b : false,
+            checkboxStatus: data.checkboxStatus,
         });
         await this.writeFile(file, events, tasks, settings);
     }
@@ -1772,9 +1799,19 @@ class CalendarStore {
         return this.runMutation(() => this.updateTaskUnlocked(original, changes));
     }
     async updateTaskUnlocked(original, changes) {
+        var _a;
         const settings = this.getSettings();
         const newDateKey = changes.date ? (0, dateUtils_1.dateKey)(changes.date) : original.date;
-        const merged = { ...original, ...changes, date: newDateKey };
+        const merged = {
+            ...original,
+            ...changes,
+            date: newDateKey,
+            // Ordinary edits should preserve custom markers. An explicit marker wins;
+            // otherwise only a real completed-state change should reset it to x/blank.
+            checkboxStatus: (_a = changes.checkboxStatus) !== null && _a !== void 0 ? _a : (changes.completed !== undefined && changes.completed !== original.completed
+                ? (changes.completed ? "x" : " ")
+                : original.checkboxStatus),
+        };
         if (newDateKey === original.date) {
             const file = await this.getFile(original.filePath);
             const { events, tasks } = await this.loadListsForFile(file);
@@ -1958,9 +1995,10 @@ exports.VIEW_TYPE_CALENDAR = "daynest-view";
 let lastCalendarAnchorForSession = null;
 class CalendarView extends obsidian_1.ItemView {
     constructor(leaf, plugin) {
+        var _a;
         super(leaf);
         this.plugin = plugin;
-        this.anchor = lastCalendarAnchorForSession?.clone() ?? (0, dateUtils_1.today)();
+        this.anchor = (_a = lastCalendarAnchorForSession === null || lastCalendarAnchorForSession === void 0 ? void 0 : lastCalendarAnchorForSession.clone()) !== null && _a !== void 0 ? _a : (0, dateUtils_1.today)();
         this.isRendering = false;
         // "full" always wins over a queued "refresh" — a real navigation must never
         // be silently downgraded into an in-place update.
@@ -1969,7 +2007,7 @@ class CalendarView extends obsidian_1.ItemView {
         // Held in memory only: nothing is written anywhere until you actually paste.
         this.clipboard = null;
         const { defaultView, lastUsedView } = plugin.settings;
-        this.mode = defaultView === "last" ? lastUsedView ?? "month" : defaultView;
+        this.mode = defaultView === "last" ? lastUsedView !== null && lastUsedView !== void 0 ? lastUsedView : "month" : defaultView;
         lastCalendarAnchorForSession = this.anchor.clone();
     }
     get store() {
@@ -2011,8 +2049,9 @@ class CalendarView extends obsidian_1.ItemView {
         this.renderAll();
     }
     async onClose() {
-        this.unsubscribe?.();
-        Object.values(this.subViews).forEach((v) => v.destroy?.());
+        var _a;
+        (_a = this.unsubscribe) === null || _a === void 0 ? void 0 : _a.call(this);
+        Object.values(this.subViews).forEach((v) => { var _a; return (_a = v.destroy) === null || _a === void 0 ? void 0 : _a.call(v); });
     }
     // -------------------------------------------------------------- rendering
     renderAll() {
@@ -2083,11 +2122,11 @@ class CalendarView extends obsidian_1.ItemView {
             });
         });
         const right = this.headerEl.createDiv({ cls: "daily-calendar-nav-group" });
-        const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "<", attr: { "aria-label": "Previous" } });
+        const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "‹", attr: { "aria-label": "Previous" } });
         prevBtn.addEventListener("click", () => this.step(-1));
         const todayBtn = right.createEl("button", { cls: "daily-calendar-btn", text: "Today" });
         todayBtn.addEventListener("click", () => this.goToday());
-        const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: ">", attr: { "aria-label": "Next" } });
+        const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "›", attr: { "aria-label": "Next" } });
         nextBtn.addEventListener("click", () => this.step(1));
     }
     formatHeaderTitle() {
@@ -2142,10 +2181,11 @@ class CalendarView extends obsidian_1.ItemView {
         }
     }
     openEventCreate(date, prefill) {
+        var _a, _b, _c;
         const settings = this.getSettings();
-        const start = prefill?.start ?? settings.workingHoursStart;
-        const end = prefill?.end ?? (0, dateUtils_1.minutesToTime)((0, dateUtils_1.timeToMinutes)(start) + settings.defaultEventDurationMinutes);
-        new eventEditorModal_1.ItemEditorModal(this.app, settings, { kind: "event", title: "", allDay: prefill?.allDay ?? false, start, end, time: start, completed: false, tags: [] }, {
+        const start = (_a = prefill === null || prefill === void 0 ? void 0 : prefill.start) !== null && _a !== void 0 ? _a : settings.workingHoursStart;
+        const end = (_b = prefill === null || prefill === void 0 ? void 0 : prefill.end) !== null && _b !== void 0 ? _b : (0, dateUtils_1.minutesToTime)((0, dateUtils_1.timeToMinutes)(start) + settings.defaultEventDurationMinutes);
+        new eventEditorModal_1.ItemEditorModal(this.app, settings, { kind: "event", title: "", allDay: (_c = prefill === null || prefill === void 0 ? void 0 : prefill.allDay) !== null && _c !== void 0 ? _c : false, start, end, time: start, completed: false, tags: [] }, {
             onSaveEvent: async (data) => {
                 await this.store.createEvent(date, data);
             },
@@ -2179,15 +2219,16 @@ class CalendarView extends obsidian_1.ItemView {
         }).open();
     }
     openTaskCreate(date, prefill) {
+        var _a, _b, _c;
         const settings = this.getSettings();
-        const time = prefill?.time ?? settings.workingHoursStart;
+        const time = (_a = prefill === null || prefill === void 0 ? void 0 : prefill.time) !== null && _a !== void 0 ? _a : settings.workingHoursStart;
         new eventEditorModal_1.ItemEditorModal(this.app, settings, {
             kind: "task",
             title: "",
-            allDay: prefill?.allDay ?? true,
+            allDay: (_b = prefill === null || prefill === void 0 ? void 0 : prefill.allDay) !== null && _b !== void 0 ? _b : true,
             start: time,
             end: (0, dateUtils_1.minutesToTime)((0, dateUtils_1.timeToMinutes)(time) + settings.defaultEventDurationMinutes),
-            time: prefill?.time ?? null,
+            time: (_c = prefill === null || prefill === void 0 ? void 0 : prefill.time) !== null && _c !== void 0 ? _c : null,
             completed: false,
             tags: [],
         }, {
@@ -2200,8 +2241,9 @@ class CalendarView extends obsidian_1.ItemView {
         }).open();
     }
     openTaskEdit(item) {
+        var _a;
         const settings = this.getSettings();
-        const time = item.time ?? settings.workingHoursStart;
+        const time = (_a = item.time) !== null && _a !== void 0 ? _a : settings.workingHoursStart;
         new eventEditorModal_1.ItemEditorModal(this.app, settings, {
             kind: "task",
             title: item.title,
@@ -2225,9 +2267,17 @@ class CalendarView extends obsidian_1.ItemView {
             },
         }).open();
     }
-    async toggleTask(item) {
+    async toggleTask(item, checked) {
         try {
-            await this.store.toggleTaskCompleted(item);
+            if (checked === undefined) {
+                await this.store.toggleTaskCompleted(item);
+            }
+            else {
+                await this.store.updateTask(item, {
+                    completed: checked,
+                    checkboxStatus: checked ? "x" : " ",
+                });
+            }
         }
         catch (e) {
             console.error("Daynest: failed to toggle task", e);
@@ -2261,6 +2311,7 @@ class CalendarView extends obsidian_1.ItemView {
                     time,
                     tags: src.tags,
                     completed: src.completed,
+                    checkboxStatus: src.checkboxStatus,
                 });
             }
         }
@@ -2533,6 +2584,8 @@ function layoutOverlaps(items) {
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleCalendarAction = handleCalendarAction;
+exports.usesDefaultObsidianTheme = usesDefaultObsidianTheme;
+exports.renderTaskCheckbox = renderTaskCheckbox;
 exports.moveItemToDate = moveItemToDate;
 exports.moveItemDateTime = moveItemDateTime;
 exports.duplicateItem = duplicateItem;
@@ -2557,6 +2610,73 @@ function handleCalendarAction(action, operation) {
         const compactDetail = detail.length > 140 ? `${detail.slice(0, 137)}…` : detail;
         new obsidian_1.Notice(`Couldn't ${action}: ${compactDetail}`, 8000);
     });
+}
+/**
+ * Obsidian ships two built-in themes: Obsidian (dark) and Moonstone (light).
+ * Keep Daynest's original compact checkbox for those built-ins, while letting
+ * community themes style native Obsidian checkbox inputs themselves.
+ */
+function usesDefaultObsidianTheme(app) {
+    var _a, _b, _c;
+    const runtimeApp = app;
+    const active = typeof ((_a = runtimeApp.customCss) === null || _a === void 0 ? void 0 : _a.theme) === "string"
+        ? runtimeApp.customCss.theme
+        : (_c = (_b = runtimeApp.vault) === null || _b === void 0 ? void 0 : _b.config) === null || _c === void 0 ? void 0 : _c.theme;
+    if (typeof active !== "string" || active.trim() === "")
+        return true;
+    const themeName = active.trim().toLowerCase();
+    return themeName === "obsidian" || themeName === "moonstone" || themeName === "default";
+}
+/**
+ * Render a task marker with Daynest's legacy checkbox in Obsidian's built-in
+ * themes, and a native checkbox when a community theme is active. In either
+ * case, expose the original marker through data-task; native controls also use
+ * Obsidian's task-list-item-checkbox class so community-theme rules can target it.
+ */
+function renderTaskCheckbox(parent, app, item, onToggle) {
+    var _a;
+    const marker = (_a = item.checkboxStatus) !== null && _a !== void 0 ? _a : (item.completed ? "x" : " ");
+    const visuallyChecked = marker !== " ";
+    const useLegacyCheckbox = usesDefaultObsidianTheme(app);
+    const statusContainers = [parent, parent.closest(".dc-pill-task, .dc-block-task")].filter((container) => container !== null);
+    for (const container of new Set(statusContainers)) {
+        container.classList.add("task-list-item");
+        container.setAttribute("data-task", marker);
+        container.classList.toggle("is-checked", marker !== " ");
+    }
+    if (useLegacyCheckbox) {
+        const check = parent.createDiv({ cls: "dc-pill-check" + (visuallyChecked ? " is-checked" : "") });
+        check.setAttribute("role", "checkbox");
+        check.setAttribute("aria-checked", String(visuallyChecked));
+        check.addEventListener("mousedown", (event) => event.stopPropagation());
+        check.addEventListener("click", (event) => {
+            event.stopPropagation();
+            onToggle(!visuallyChecked);
+        });
+        return check;
+    }
+    // Community themes often scope status glyphs to the same selector shape
+    // used by Obsidian's Markdown renderer. `display: contents` lets the input
+    // remain a normal flex item in the calendar while preserving that structure.
+    const themeScope = parent.createDiv({ cls: "markdown-preview-view dc-task-theme-scope" });
+    const taskRow = themeScope.createEl("li", {
+        cls: "task-list-item dc-theme-task-list-item" + (visuallyChecked ? " is-checked" : ""),
+        attr: { "data-task": marker },
+    });
+    const check = taskRow.createEl("input", {
+        cls: "dc-task-checkbox task-list-item-checkbox",
+        attr: { type: "checkbox", "data-task": marker },
+    });
+    // Obsidian treats custom non-blank statuses as checked for purposes of
+    // theme CSS selectors; the data-task attribute supplies the actual status.
+    check.checked = visuallyChecked;
+    check.addEventListener("mousedown", (event) => event.stopPropagation());
+    check.addEventListener("click", (event) => event.stopPropagation());
+    check.addEventListener("change", (event) => {
+        event.stopPropagation();
+        onToggle(check.checked);
+    });
+    return check;
 }
 /** Moves an item to a new date, keeping its time-of-day unchanged. Used by drag-and-drop in Month view. */
 async function moveItemToDate(store, item, newDate) {
@@ -2597,6 +2717,7 @@ function duplicateItem(host, item) {
             time: item.time,
             tags: item.tags,
             completed: item.completed,
+            checkboxStatus: item.checkboxStatus,
         });
     }
 }
@@ -2621,12 +2742,10 @@ function renderItemChip(host, item, settings, opts) {
         });
     }
     if (item.kind === "task") {
-        const check = chip.createDiv({ cls: "dc-pill-check" + (item.completed ? " is-checked" : "") });
-        check.addEventListener("mousedown", (e) => e.stopPropagation());
-        check.addEventListener("click", (e) => {
-            e.stopPropagation();
-            void host.toggleTask(item);
+        const check = renderTaskCheckbox(chip, host.app, item, (checked) => {
+            void host.toggleTask(item, checked);
         });
+        check.style.setProperty("--dc-item-color", color);
     }
     const label = chip.createSpan({ cls: "dc-pill-label" });
     const fullTitle = (0, parser_1.stripTags)((0, parser_1.displayTitle)(item.title));
@@ -2638,7 +2757,12 @@ function renderItemChip(host, item, settings, opts) {
     renderPillTagHint(chip, label, item, settings);
     // Task tags display in full when their complete set fits after the title;
     // otherwise they collapse to one # marker. The hover popover has all names.
-    attachItemTitlePopover(chip, label, item.kind === "task" ? (0, parser_1.displayTitle)(item.title) : fullTitle, item.kind === "task" && item.tags.length > 0);
+    attachItemTitlePopover(chip, label, item.kind === "task" ? (0, parser_1.displayTitle)(item.title) : fullTitle, item.kind === "task"
+        ? () => {
+            const badges = Array.from(chip.querySelectorAll(".dc-task-full-tag"));
+            return badges.length !== item.tags.length || badges.some((badge, index) => badge.textContent !== `#${item.tags[index]}` || badge.scrollWidth > badge.clientWidth + 1);
+        }
+        : undefined);
     chip.addEventListener("click", (e) => {
         e.stopPropagation();
         const linkTarget = (0, parser_1.firstWikilinkTarget)(item.title);
@@ -2831,7 +2955,7 @@ function renderTaskTagHints(container, label, item, settings) {
     window.requestAnimationFrame(() => fitTitleAndTagBadges(container, label, badges));
 }
 /** Show a lightweight full-title popover only when the visible label is clipped. */
-function attachItemTitlePopover(el, label, text, showWhenTagsHidden = false) {
+function attachItemTitlePopover(el, label, text, tagsAreHidden) {
     let timer = null;
     let popover = null;
     let observer = null;
@@ -2855,7 +2979,8 @@ function attachItemTitlePopover(el, label, text, showWhenTagsHidden = false) {
             // popover in Obsidian's top-left corner if we didn't reject it here.
             if (!hovered || !el.isConnected)
                 return;
-            if (!showWhenTagsHidden && label.scrollWidth <= label.clientWidth + 1 && label.scrollHeight <= label.clientHeight + 1)
+            const titleIsClipped = label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1;
+            if (!titleIsClipped && !(tagsAreHidden === null || tagsAreHidden === void 0 ? void 0 : tagsAreHidden()))
                 return;
             popover = document.body.createDiv({ cls: "dc-hover-popover", text });
             const rect = el.getBoundingClientRect();
@@ -2966,10 +3091,11 @@ class TimelineBaseView {
     finishPendingMoveVisual() {
         const cleanup = this.pendingMoveVisualCleanup;
         this.pendingMoveVisualCleanup = null;
-        cleanup?.();
+        cleanup === null || cleanup === void 0 ? void 0 : cleanup();
     }
     registerInteractionCleanup(cleanup) {
-        this.activeInteractionCleanup?.();
+        var _a;
+        (_a = this.activeInteractionCleanup) === null || _a === void 0 ? void 0 : _a.call(this);
         this.activeInteractionCleanup = cleanup;
     }
     releaseInteractionCleanup(cleanup) {
@@ -3064,8 +3190,9 @@ class TimelineBaseView {
         const columns = grid.createDiv({ cls: "dc-timeline-columns" });
         this.lastColumnsEl = columns;
         dates.forEach((date) => {
+            var _a;
             const col = this.buildColumnSkeleton(columns, date, dates, settings, hourHeight);
-            this.populateColumnBlocks(col, columns, date, dates, itemsByDate.get((0, dateUtils_1.dateKey)(date)) ?? [], settings, hourHeight);
+            this.populateColumnBlocks(col, columns, date, dates, (_a = itemsByDate.get((0, dateUtils_1.dateKey)(date))) !== null && _a !== void 0 ? _a : [], settings, hourHeight);
         });
         if (settings.showCurrentTimeIndicator) {
             this.updateNowLine(columns, gutter, dates, allDates, hourHeight);
@@ -3101,6 +3228,7 @@ class TimelineBaseView {
      * item landing on a hidden weekend), in which case the columns are
      * rebuilt with the scroll position carried across. */
     async refresh() {
+        var _a, _b;
         if (!this.lastAllDates ||
             !this.lastDates ||
             !this.lastColumnsEl ||
@@ -3117,27 +3245,29 @@ class TimelineBaseView {
         const previous = this.lastDates;
         const sameColumns = nextDates.length === previous.length && nextDates.every((d, i) => (0, dateUtils_1.isSameDay)(d, previous[i]));
         if (!sameColumns) {
-            await this.build(this.lastContainer, this.lastAnchor, this.lastScrollEl?.scrollTop ?? null, true);
+            await this.build(this.lastContainer, this.lastAnchor, (_b = (_a = this.lastScrollEl) === null || _a === void 0 ? void 0 : _a.scrollTop) !== null && _b !== void 0 ? _b : null, true);
             this.finishPendingMoveVisual();
             return;
         }
         this.lastAllDayRowEl = this.syncAllDayRow(this.lastRootEl, previous, itemsByDate, settings, this.lastAllDayRowEl);
         const columns = this.lastColumnsEl;
         previous.forEach((date, i) => {
+            var _a;
             const col = columns.children.item(i);
             if (!col)
                 return;
             col.querySelectorAll(".dc-block").forEach((el) => el.remove());
-            this.populateColumnBlocks(col, columns, date, previous, itemsByDate.get((0, dateUtils_1.dateKey)(date)) ?? [], settings, hourHeight);
+            this.populateColumnBlocks(col, columns, date, previous, (_a = itemsByDate.get((0, dateUtils_1.dateKey)(date))) !== null && _a !== void 0 ? _a : [], settings, hourHeight);
         });
         // The fresh item DOM is now in place under the proxy. Remove the proxy
         // only after rendering finishes, avoiding the old-position flash on mouseup.
         this.finishPendingMoveVisual();
     }
     destroy() {
+        var _a;
         // Closing/rebuilding a view mid-gesture must not leave global listeners
         // attached or let a later mouseup create/move an event unexpectedly.
-        this.activeInteractionCleanup?.();
+        (_a = this.activeInteractionCleanup) === null || _a === void 0 ? void 0 : _a.call(this);
         this.activeInteractionCleanup = null;
         this.finishPendingMoveVisual();
         if (this.intervalId !== null) {
@@ -3148,9 +3278,9 @@ class TimelineBaseView {
     // ------------------------------------------------------------------ all-day
     /** Creates, repopulates, or removes the all-day row as needed, and returns its current element (or null). */
     syncAllDayRow(root, dates, itemsByDate, settings, existing) {
-        const hasAnyAllDay = dates.some((date) => (itemsByDate.get((0, dateUtils_1.dateKey)(date)) ?? []).some((it) => it.allDay));
+        const hasAnyAllDay = dates.some((date) => { var _a; return ((_a = itemsByDate.get((0, dateUtils_1.dateKey)(date))) !== null && _a !== void 0 ? _a : []).some((it) => it.allDay); });
         if (!hasAnyAllDay) {
-            existing?.remove();
+            existing === null || existing === void 0 ? void 0 : existing.remove();
             return null;
         }
         let allDayRow = existing;
@@ -3159,7 +3289,7 @@ class TimelineBaseView {
             allDayRow.createDiv({ cls: "dc-timeline-gutter-spacer", text: "All-day" });
             allDayRow.createDiv({ cls: "dc-timeline-allday-cols" });
             const header = root.querySelector(".dc-timeline-header");
-            if (header?.nextSibling)
+            if (header === null || header === void 0 ? void 0 : header.nextSibling)
                 root.insertBefore(allDayRow, header.nextSibling);
             else
                 root.appendChild(allDayRow);
@@ -3167,10 +3297,11 @@ class TimelineBaseView {
         const allDayCols = allDayRow.querySelector(".dc-timeline-allday-cols");
         allDayCols.empty();
         dates.forEach((date) => {
+            var _a;
             const col = allDayCols.createDiv({ cls: "dc-timeline-allday-col" });
             if (dates.length > 1 && settings.weekendShading && (0, dateUtils_1.isWeekendDate)(date))
                 col.addClass("dc-weekend");
-            const items = (itemsByDate.get((0, dateUtils_1.dateKey)(date)) ?? []).filter((it) => it.allDay);
+            const items = ((_a = itemsByDate.get((0, dateUtils_1.dateKey)(date))) !== null && _a !== void 0 ? _a : []).filter((it) => it.allDay);
             items.forEach((item) => {
                 const chip = (0, shared_1.renderItemChip)(this.host, item, settings);
                 chip.addEventListener("contextmenu", (e) => this.showAllDayItemMenu(e, item, date));
@@ -3218,7 +3349,8 @@ class TimelineBaseView {
     populateColumnBlocks(col, columnsContainer, date, allDates, items, settings, hourHeight) {
         const timed = items.filter((it) => !it.allDay);
         const layoutInput = timed.map((it) => {
-            const startMin = it.kind === "event" ? (0, dateUtils_1.timeToMinutes)(it.start) : (0, dateUtils_1.timeToMinutes)(it.time ?? { hour: 0, minute: 0 });
+            var _a;
+            const startMin = it.kind === "event" ? (0, dateUtils_1.timeToMinutes)(it.start) : (0, dateUtils_1.timeToMinutes)((_a = it.time) !== null && _a !== void 0 ? _a : { hour: 0, minute: 0 });
             // Tasks get a nominal 30-minute footprint purely so they don't visually
             // collide with nearby events in the column layout — they still render
             // at a fixed, minimal height (see renderBlock).
@@ -3249,12 +3381,10 @@ class TimelineBaseView {
         let clearClickSuppression = null;
         let captureSuppressedClick = null;
         if (isTask) {
-            const check = body.createDiv({ cls: "dc-pill-check" + (item.completed ? " is-checked" : "") });
-            check.addEventListener("mousedown", (e) => e.stopPropagation());
-            check.addEventListener("click", (e) => {
-                e.stopPropagation();
-                void this.host.toggleTask(item);
+            const check = (0, shared_1.renderTaskCheckbox)(body, this.host.app, item, (checked) => {
+                void this.host.toggleTask(item, checked);
             });
+            check.style.setProperty("--dc-item-color", (0, colorRules_1.resolveColor)(item.tags, settings.colorRules, (0, shared_1.defaultColorFor)(item, settings)));
             this.renderTaskContent(body, item, settings);
         }
         else {
@@ -3482,12 +3612,12 @@ class TimelineBaseView {
         // otherwise the shared helper substitutes one # marker. Hover remains one
         // block-level popover containing the complete title and all tag names.
         const fullDisplayTitle = (0, parser_1.displayTitle)(item.title);
-        if (item.tags.length > 0) {
-            this.attachHoverPopover(body, fullDisplayTitle);
-        }
-        else if (label.scrollWidth > label.clientWidth + 1) {
-            this.attachHoverPopover(body, fullDisplayTitle);
-        }
+        this.attachHoverPopover(body, fullDisplayTitle, () => {
+            const titleIsClipped = label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1;
+            const visibleTags = Array.from(body.querySelectorAll(".dc-task-full-tag"));
+            const tagsAreHidden = visibleTags.length !== item.tags.length || visibleTags.some((badge, index) => badge.textContent !== `#${item.tags[index]}` || badge.scrollWidth > badge.clientWidth + 1);
+            return titleIsClipped || tagsAreHidden;
+        });
     }
     /**
      * Fills a single-line tag row with as many real, fully-visible tag
@@ -3535,7 +3665,7 @@ class TimelineBaseView {
         return container.childElementCount > 0;
     }
     /** A small popover with the full, untruncated text — shown after a short hover delay, matching the drag tooltip's visual language. */
-    attachHoverPopover(el, text) {
+    attachHoverPopover(el, text, shouldShow = () => true) {
         let popover = null;
         let timer = null;
         let observer = null;
@@ -3547,9 +3677,9 @@ class TimelineBaseView {
         };
         const hide = () => {
             clearTimer();
-            observer?.disconnect();
+            observer === null || observer === void 0 ? void 0 : observer.disconnect();
             observer = null;
-            popover?.remove();
+            popover === null || popover === void 0 ? void 0 : popover.remove();
             popover = null;
         };
         el.addEventListener("mouseenter", () => {
@@ -3559,7 +3689,7 @@ class TimelineBaseView {
                 timer = null;
                 // Timeline refreshes can detach a block during this delay. Don't
                 // create a popover for a stale element (whose rectangle is 0, 0).
-                if (!hovered || !el.isConnected)
+                if (!hovered || !el.isConnected || !shouldShow())
                     return;
                 popover = document.body.createDiv({ cls: "dc-hover-popover", text });
                 const rect = el.getBoundingClientRect();
@@ -3748,7 +3878,8 @@ class TimelineBaseView {
         this.registerInteractionCleanup(cleanup);
     }
     startMoveDrag(e, item, el, columnsContainer, allDates, settings, hourHeight, onDragStarted) {
-        const startMin = item.kind === "event" ? (0, dateUtils_1.timeToMinutes)(item.start) : (0, dateUtils_1.timeToMinutes)(item.time ?? { hour: 0, minute: 0 });
+        var _a;
+        const startMin = item.kind === "event" ? (0, dateUtils_1.timeToMinutes)(item.start) : (0, dateUtils_1.timeToMinutes)((_a = item.time) !== null && _a !== void 0 ? _a : { hour: 0, minute: 0 });
         const durationMin = item.kind === "event" ? (0, dateUtils_1.timeToMinutes)(item.end) - (0, dateUtils_1.timeToMinutes)(item.start) : 0;
         const originColIndex = Math.max(0, allDates.findIndex((d) => (0, dateUtils_1.dateKey)(d) === item.date));
         const startClientX = e.clientX;
@@ -3819,8 +3950,8 @@ class TimelineBaseView {
         };
         const removeVisuals = () => {
             el.style.visibility = previousVisibility;
-            overlay?.remove();
-            tooltip?.remove();
+            overlay === null || overlay === void 0 ? void 0 : overlay.remove();
+            tooltip === null || tooltip === void 0 ? void 0 : tooltip.remove();
             if (this.pendingMoveVisualCleanup === removeVisuals)
                 this.pendingMoveVisualCleanup = null;
         };
@@ -3843,7 +3974,7 @@ class TimelineBaseView {
             // Keep the proxy at the drop location and the original hidden while the
             // store writes and refreshes. refresh() removes the source, renders the
             // destination, and only then calls finishPendingMoveVisual().
-            tooltip?.remove();
+            tooltip === null || tooltip === void 0 ? void 0 : tooltip.remove();
             tooltip = null;
             if (overlay) {
                 overlay.style.opacity = "1";
@@ -4057,7 +4188,8 @@ function formatEventLine(item, workingHoursStart, workingHoursEnd) {
     return `- ${fileTime(start)} - ${fileTime(end)} ${item.title}`.trimEnd();
 }
 function formatTaskLine(item) {
-    const box = item.completed ? "x" : " ";
+    var _a;
+    const box = (_a = item.checkboxStatus) !== null && _a !== void 0 ? _a : (item.completed ? "x" : " ");
     if (item.allDay || !item.time) {
         return `- [${box}] ${item.title}`.trimEnd();
     }

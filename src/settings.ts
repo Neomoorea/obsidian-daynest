@@ -30,6 +30,7 @@ const OPEN_MODE_OPTIONS: Record<string, string> = {
 
 export class DaynestSettingTab extends PluginSettingTab {
 	plugin: DaynestPlugin;
+	private activeCategory: "general" | "daily-notes" | "colours" | "appearance" = "general";
 
 	constructor(app: App, plugin: DaynestPlugin) {
 		super(app, plugin);
@@ -40,10 +41,31 @@ export class DaynestSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		this.renderGeneral(containerEl);
-		this.renderDailyNotes(containerEl);
-		this.renderColors(containerEl);
-		this.renderAppearance(containerEl);
+		const tabsEl = containerEl.createDiv({
+			cls: "daily-calendar-settings-tabs",
+			attr: { role: "tablist" },
+		});
+		const contentEl = containerEl.createDiv({ cls: "daily-calendar-settings-content" });
+		const categories = [
+			{ id: "general", label: "General", render: () => this.renderGeneral(contentEl) },
+			{ id: "daily-notes", label: "Daily Notes", render: () => this.renderDailyNotes(contentEl) },
+			{ id: "colours", label: "Colours", render: () => this.renderColors(contentEl) },
+			{ id: "appearance", label: "Appearance", render: () => this.renderAppearance(contentEl) },
+		] as const;
+		for (const category of categories) {
+			const active = this.activeCategory === category.id;
+			const button = tabsEl.createEl("button", {
+				cls: "daily-calendar-settings-tab" + (active ? " is-active" : ""),
+				text: category.label,
+				attr: { type: "button", role: "tab", "aria-selected": String(active) },
+			});
+			button.addEventListener("click", () => {
+				if (this.activeCategory === category.id) return;
+				this.activeCategory = category.id;
+				this.display();
+			});
+		}
+		categories.find((category) => category.id === this.activeCategory)?.render();
 	}
 
 	private async save(invalidateCache = true): Promise<void> {

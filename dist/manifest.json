@@ -1,7 +1,7 @@
 {
 	"id": "daynest",
 	"name": "Daynest",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"minAppVersion": "1.4.0",
 	"description": "A modern calendar, nested entirely in your Daily Notes' Markdown.",
 	"author": "Neomoorea",

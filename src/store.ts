@@ -349,14 +349,14 @@ export class CalendarStore {
 
 	createTask(
 		date: Moment,
-		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean }
+		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean; checkboxStatus?: string }
 	): Promise<void> {
 		return this.runMutation(() => this.createTaskUnlocked(date, data));
 	}
 
 	private async createTaskUnlocked(
 		date: Moment,
-		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean }
+		data: { title: string; time: TimeOfDay | null; allDay: boolean; tags?: string[]; completed?: boolean; checkboxStatus?: string }
 	): Promise<void> {
 		const settings = this.getSettings();
 		const { file, events, tasks } = await this.loadEditableLists(date);
@@ -372,6 +372,7 @@ export class CalendarStore {
 			allDay: data.allDay,
 			time: data.time,
 			completed: data.completed ?? false,
+			checkboxStatus: data.checkboxStatus,
 		});
 		await this.writeFile(file, events, tasks, settings);
 	}
@@ -433,6 +434,7 @@ export class CalendarStore {
 			allDay: boolean;
 			tags: string[];
 			completed: boolean;
+			checkboxStatus: string;
 			date: Moment;
 		}>
 	): Promise<void> {
@@ -447,12 +449,24 @@ export class CalendarStore {
 			allDay: boolean;
 			tags: string[];
 			completed: boolean;
+			checkboxStatus: string;
 			date: Moment;
 		}>
 	): Promise<void> {
 		const settings = this.getSettings();
 		const newDateKey = changes.date ? dateKey(changes.date) : original.date;
-		const merged: CalendarTaskItem = { ...original, ...changes, date: newDateKey };
+		const merged: CalendarTaskItem = {
+			...original,
+			...changes,
+			date: newDateKey,
+			// Ordinary edits should preserve custom markers. An explicit marker wins;
+			// otherwise only a real completed-state change should reset it to x/blank.
+			checkboxStatus: changes.checkboxStatus ?? (
+				changes.completed !== undefined && changes.completed !== original.completed
+					? (changes.completed ? "x" : " ")
+					: original.checkboxStatus
+			),
+		};
 
 		if (newDateKey === original.date) {
 			const file = await this.getFile(original.filePath);

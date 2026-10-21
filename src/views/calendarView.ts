@@ -164,13 +164,13 @@ export class CalendarView extends ItemView implements CalendarHost {
 		});
 
 		const right = this.headerEl.createDiv({ cls: "daily-calendar-nav-group" });
-		const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "<", attr: { "aria-label": "Previous" } });
+		const prevBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "‹", attr: { "aria-label": "Previous" } });
 		prevBtn.addEventListener("click", () => this.step(-1));
 
 		const todayBtn = right.createEl("button", { cls: "daily-calendar-btn", text: "Today" });
 		todayBtn.addEventListener("click", () => this.goToday());
 
-		const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: ">", attr: { "aria-label": "Next" } });
+		const nextBtn = right.createEl("button", { cls: "daily-calendar-icon-btn", text: "›", attr: { "aria-label": "Next" } });
 		nextBtn.addEventListener("click", () => this.step(1));
 	}
 
@@ -332,9 +332,16 @@ export class CalendarView extends ItemView implements CalendarHost {
 		).open();
 	}
 
-	async toggleTask(item: CalendarTaskItem): Promise<void> {
+	async toggleTask(item: CalendarTaskItem, checked?: boolean): Promise<void> {
 		try {
-			await this.store.toggleTaskCompleted(item);
+			if (checked === undefined) {
+				await this.store.toggleTaskCompleted(item);
+			} else {
+				await this.store.updateTask(item, {
+					completed: checked,
+					checkboxStatus: checked ? "x" : " ",
+				});
+			}
 		} catch (e) {
 			console.error("Daynest: failed to toggle task", e);
 			new Notice("Couldn't update that task — see the developer console for details.");
@@ -373,6 +380,7 @@ export class CalendarView extends ItemView implements CalendarHost {
 					time,
 					tags: src.tags,
 					completed: src.completed,
+					checkboxStatus: src.checkboxStatus,
 				});
 			}
 		} catch (e) {

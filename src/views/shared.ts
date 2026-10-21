@@ -24,7 +24,7 @@ export interface CalendarHost {
 	openTaskCreate(date: Moment, prefill?: Partial<{ time: TimeOfDay | null; allDay: boolean }>): void;
 	openTaskEdit(item: CalendarTaskItem): void;
 
-	toggleTask(item: CalendarTaskItem): Promise<void>;
+	toggleTask(item: CalendarTaskItem, checked?: boolean): Promise<void>;
 
 	/** Jump to a different anchor date and/or view mode (e.g. clicking a day in Year view). */
 	goTo(anchor: Moment, mode: ViewMode): void;
@@ -53,6 +53,84 @@ export function handleCalendarAction(action: string, operation: Promise<unknown>
 		const compactDetail = detail.length > 140 ? `${detail.slice(0, 137)}…` : detail;
 		new Notice(`Couldn't ${action}: ${compactDetail}`, 8000);
 	});
+}
+
+/**
+ * Obsidian ships two built-in themes: Obsidian (dark) and Moonstone (light).
+ * Keep Daynest's original compact checkbox for those built-ins, while letting
+ * community themes style native Obsidian checkbox inputs themselves.
+ */
+export function usesDefaultObsidianTheme(app: App): boolean {
+	const runtimeApp = app as unknown as {
+		customCss?: { theme?: unknown };
+		vault?: { config?: { theme?: unknown } };
+	};
+	const active = typeof runtimeApp.customCss?.theme === "string"
+		? runtimeApp.customCss.theme
+		: runtimeApp.vault?.config?.theme;
+	if (typeof active !== "string" || active.trim() === "") return true;
+	const themeName = active.trim().toLowerCase();
+	return themeName === "obsidian" || themeName === "moonstone" || themeName === "default";
+}
+
+/**
+ * Render a task marker with Daynest's legacy checkbox in Obsidian's built-in
+ * themes, and a native checkbox when a community theme is active. In either
+ * case, expose the original marker through data-task; native controls also use
+ * Obsidian's task-list-item-checkbox class so community-theme rules can target it.
+ */
+export function renderTaskCheckbox(
+	parent: HTMLElement,
+	app: App,
+	item: CalendarTaskItem,
+	onToggle: (checked: boolean) => void
+): HTMLElement {
+	const marker = item.checkboxStatus ?? (item.completed ? "x" : " ");
+	const visuallyChecked = marker !== " ";
+	const useLegacyCheckbox = usesDefaultObsidianTheme(app);
+	const statusContainers = [parent, parent.closest<HTMLElement>(".dc-pill-task, .dc-block-task")].filter(
+		(container): container is HTMLElement => container !== null
+	);
+	for (const container of new Set(statusContainers)) {
+		container.classList.add("task-list-item");
+		container.setAttribute("data-task", marker);
+		container.classList.toggle("is-checked", marker !== " ");
+	}
+
+	if (useLegacyCheckbox) {
+		const check = parent.createDiv({ cls: "dc-pill-check" + (visuallyChecked ? " is-checked" : "") });
+		check.setAttribute("role", "checkbox");
+		check.setAttribute("aria-checked", String(visuallyChecked));
+		check.addEventListener("mousedown", (event) => event.stopPropagation());
+		check.addEventListener("click", (event) => {
+			event.stopPropagation();
+			onToggle(!visuallyChecked);
+		});
+		return check;
+	}
+
+	// Community themes often scope status glyphs to the same selector shape
+	// used by Obsidian's Markdown renderer. `display: contents` lets the input
+	// remain a normal flex item in the calendar while preserving that structure.
+	const themeScope = parent.createDiv({ cls: "markdown-preview-view dc-task-theme-scope" });
+	const taskRow = themeScope.createEl("li", {
+		cls: "task-list-item dc-theme-task-list-item" + (visuallyChecked ? " is-checked" : ""),
+		attr: { "data-task": marker },
+	});
+	const check = taskRow.createEl("input", {
+		cls: "dc-task-checkbox task-list-item-checkbox",
+		attr: { type: "checkbox", "data-task": marker },
+	});
+	// Obsidian treats custom non-blank statuses as checked for purposes of
+	// theme CSS selectors; the data-task attribute supplies the actual status.
+	check.checked = visuallyChecked;
+	check.addEventListener("mousedown", (event) => event.stopPropagation());
+	check.addEventListener("click", (event) => event.stopPropagation());
+	check.addEventListener("change", (event) => {
+		event.stopPropagation();
+		onToggle(check.checked);
+	});
+	return check;
 }
 
 export interface CalendarSubView {
@@ -112,6 +190,7 @@ export function duplicateItem(host: CalendarHost, item: CalendarItem): void {
 			time: item.time,
 			tags: item.tags,
 			completed: item.completed,
+			checkboxStatus: item.checkboxStatus,
 		});
 	}
 }
@@ -142,12 +221,10 @@ export function renderItemChip(
 	}
 
 	if (item.kind === "task") {
-		const check = chip.createDiv({ cls: "dc-pill-check" + (item.completed ? " is-checked" : "") });
-		check.addEventListener("mousedown", (e) => e.stopPropagation());
-		check.addEventListener("click", (e) => {
-			e.stopPropagation();
-			void host.toggleTask(item);
+		const check = renderTaskCheckbox(chip, host.app, item, (checked) => {
+			void host.toggleTask(item, checked);
 		});
+		check.style.setProperty("--dc-item-color", color);
 	}
 
 	const label = chip.createSpan({ cls: "dc-pill-label" });
@@ -158,7 +235,19 @@ export function renderItemChip(
 	renderPillTagHint(chip, label, item, settings);
 	// Task tags display in full when their complete set fits after the title;
 	// otherwise they collapse to one # marker. The hover popover has all names.
-	attachItemTitlePopover(chip, label, item.kind === "task" ? displayTitle(item.title) : fullTitle, item.kind === "task" && item.tags.length > 0);
+	attachItemTitlePopover(
+		chip,
+		label,
+		item.kind === "task" ? displayTitle(item.title) : fullTitle,
+		item.kind === "task"
+			? () => {
+				const badges = Array.from(chip.querySelectorAll<HTMLElement>(".dc-task-full-tag"));
+				return badges.length !== item.tags.length || badges.some((badge, index) =>
+					badge.textContent !== `#${item.tags[index]}` || badge.scrollWidth > badge.clientWidth + 1
+				);
+			}
+			: undefined
+	);
 
 	chip.addEventListener("click", (e) => {
 		e.stopPropagation();
@@ -358,7 +447,7 @@ export function renderTaskTagHints(container: HTMLElement, label: HTMLElement, i
 }
 
 /** Show a lightweight full-title popover only when the visible label is clipped. */
-function attachItemTitlePopover(el: HTMLElement, label: HTMLElement, text: string, showWhenTagsHidden = false): void {
+function attachItemTitlePopover(el: HTMLElement, label: HTMLElement, text: string, tagsAreHidden?: () => boolean): void {
 	let timer: number | null = null;
 	let popover: HTMLElement | null = null;
 	let observer: MutationObserver | null = null;
@@ -380,7 +469,8 @@ function attachItemTitlePopover(el: HTMLElement, label: HTMLElement, text: strin
 			// A detached node reports a (0, 0) rectangle and would leave a stuck
 			// popover in Obsidian's top-left corner if we didn't reject it here.
 			if (!hovered || !el.isConnected) return;
-			if (!showWhenTagsHidden && label.scrollWidth <= label.clientWidth + 1 && label.scrollHeight <= label.clientHeight + 1) return;
+			const titleIsClipped = label.scrollWidth > label.clientWidth + 1 || label.scrollHeight > label.clientHeight + 1;
+			if (!titleIsClipped && !tagsAreHidden?.()) return;
 			popover = document.body.createDiv({ cls: "dc-hover-popover", text });
 			const rect = el.getBoundingClientRect();
 			const left = Math.max(4, Math.min(rect.left, window.innerWidth - 272));

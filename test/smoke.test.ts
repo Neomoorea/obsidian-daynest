@@ -85,6 +85,11 @@ const WH_END: TimeOfDay = { hour: 18, minute: 0 };
 }
 
 {
+	const r = parseLine("- [/] Working on it", WH_START, WH_END);
+	ok(r?.kind === "task" && r.completed === false && r.checkboxStatus === "/", "custom task marker is parsed without treating it as completed");
+}
+
+{
 	const r = parseLine("- [ ] 15:30 Buy groceries #personal", WH_START, WH_END);
 	ok(r?.kind === "task", "timed task parses");
 	if (r?.kind === "task") {
@@ -178,6 +183,11 @@ eq(withTags("Planning #old", parseTagList("")), "Planning", "clearing the Tags f
 }
 
 {
+	const line = formatTaskLine({ allDay: true, time: null, completed: false, checkboxStatus: "?", title: "Need clarification" });
+	eq(line, "- [?] Need clarification", "custom task marker formats without being lost");
+}
+
+{
 	// full parse -> format round trip for every canonical example line
 	const examples = [
 		"- 09:00 - 10:00 Team meeting #work",
@@ -185,6 +195,10 @@ eq(withTags("Planning #old", parseTagList("")), "Planning", "clearing the Tags f
 		"- [ ] Buy milk",
 		"- [x] Buy milk",
 		"- [ ] 15:30 Buy groceries #personal",
+		"- [/] In progress #work",
+		"- [?] Need clarification",
+		"- [!] Important task",
+		"- [/] 13:45 Working on it",
 	];
 	for (const line of examples) {
 		const parsed = parseLine(line, WH_START, WH_END);

@@ -1,6 +1,6 @@
-// A deliberately strict parser: only the four documented syntaxes are ever
-// recognised as calendar items. Everything else is left untouched and is
-// reported back as a "foreign" line so the writer can preserve it.
+// A deliberately strict parser: only documented calendar item syntaxes are
+// recognised. Any single-character Markdown task checkbox status is supported;
+// everything else remains a foreign line and is preserved by the writer.
 
 import { CalendarEventItem, CalendarTaskItem, TimeOfDay } from "./types";
 import { timeToMinutes } from "./dateUtils";
@@ -11,8 +11,8 @@ export type ParsedItem =
 	| Omit<CalendarEventItem, "id" | "date" | "filePath" | "section">
 	| Omit<CalendarTaskItem, "id" | "date" | "filePath" | "section">;
 
-// "- [ ] 15:30 Buy groceries #personal"  or  "- [x] Buy milk"
-const TASK_RE = /^\s*-\s*\[([ xX])\]\s*(?:(\d{1,2}):(\d{2})\s+)?(.*)$/;
+// "- [ ] 15:30 Buy groceries #personal", "- [x] Buy milk", "- [/] In progress"
+const TASK_RE = /^\s*-\s*\[([^\]])\]\s*(?:(\d{1,2}):(\d{2})\s+)?(.*)$/;
 // "- 09:00 - 10:00 Team meeting #work"
 const EVENT_RE = /^\s*-\s+(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s+(.+)$/;
 function validTime(h: number, m: number): boolean {
@@ -20,9 +20,9 @@ function validTime(h: number, m: number): boolean {
 }
 
 /**
- * Parse a single Markdown line. Returns null if the line does not match one
- * of the four documented calendar syntaxes exactly — such lines are ordinary
- * Markdown and must be preserved verbatim by the caller.
+ * Parse a single Markdown line. A task checkbox may use any single-character
+ * status marker so custom Obsidian themes can render it in the calendar too.
+ * Unrecognised lines remain ordinary Markdown and are preserved verbatim.
  */
 export function parseLine(
 	line: string,
@@ -45,7 +45,7 @@ export function parseLine(
 				// Not a real clock time (e.g. "99:99") — the digits were part of
 				// the title, not a time prefix. Re-derive the title from the
 				// original line so nothing is lost.
-				const fallback = /^\s*-\s*\[[ xX]\]\s*(.*)$/.exec(line);
+				const fallback = /^\s*-\s*\[[^\]]\]\s*(.*)$/.exec(line);
 				titleSource = fallback ? fallback[1] : rest;
 			}
 		}
@@ -58,6 +58,7 @@ export function parseLine(
 			allDay: time === null,
 			time,
 			completed,
+			checkboxStatus: box,
 			title,
 			tags: extractTagsFromTitle(title),
 			rawLine: line,

@@ -148,10 +148,10 @@ test("tag editor accepts comma, space, and hashtag separators and navigation use
     "all three tag separators are normalized by the same parser");
   assert.match(editor, /Separate tags with commas, spaces, or #\./,
     "the Tags field explains the supported separators simply");
-  assert.match(calendar, /text: "<"/,
-    "the previous calendar control displays a readable less-than arrow");
-  assert.match(calendar, /text: ">"/,
-    "the next calendar control displays a readable greater-than arrow");
+  assert.match(calendar, /text: "‹"/,
+    "the previous calendar control uses the shorter single-angle chevron");
+  assert.match(calendar, /text: "›"/,
+    "the next calendar control uses the shorter single-angle chevron");
   assert.doesNotMatch(calendar, /setIcon\(prevBtn|setIcon\(nextBtn/,
     "navigation no longer depends on the tiny icon chevrons");
 });
@@ -210,14 +210,14 @@ test("package metadata and install assets are in sync", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const lock = JSON.parse(await read("package-lock.json"));
   const bundle = await read("dist/main.js");
-  assert.equal(manifest.version, "1.1.0");
+  assert.equal(manifest.version, "1.2.0");
   assert.equal(manifest.author, "Neomoorea");
   assert.equal(manifest.authorUrl, "https://github.com/neomoorea");
   assert.deepEqual(distManifest, manifest);
-  assert.equal(pkg.version, "1.1.0");
+  assert.equal(pkg.version, "1.2.0");
   assert.equal(pkg.author, "Neomoorea");
-  assert.equal(lock.version, "1.1.0");
-  assert.equal(lock.packages[""].version, "1.1.0");
+  assert.equal(lock.version, "1.2.0");
+  assert.equal(lock.packages[""].version, "1.2.0");
   assert.equal(await read("styles.css"), await read("dist/styles.css"));
   assert.match(bundle, /function renderTaskTagHints/,
     "the compiled plugin contains the full-tag-first task layout");
@@ -421,4 +421,73 @@ test("settings survive plugin unload/reload and migrate wrapped legacy data", as
   assert.match(bundle, /failed to persist settings while unloading/);
   assert.match(bundle, /const isWrapped = !!outer\.settings/);
   assert.match(bundle, /if \(isWrapped\)\s*await this\.saveSettings\(\)/);
+});
+
+test("navigation controls and settings categories use the rounded segmented-button style", async () => {
+  const css = await read("styles.css");
+  const settings = await read("src/settings.ts");
+  const calendar = await read("src/views/calendarView.ts");
+  const bundle = await read("dist/main.js");
+  assert.match(css, /\.daily-calendar-btn\s*\{[^}]*border-radius:\s*999px;/s);
+  assert.match(css, /\.daily-calendar-icon-btn\s*\{[^}]*border-radius:\s*50%/s);
+  assert.match(css, /\.daily-calendar-view-switcher\s*\{[^}]*border-radius:\s*999px/s);
+  assert.match(css, /\.daily-calendar-settings-tabs\s*\{[^}]*border-radius:\s*999px/s);
+  assert.match(settings, /id: "general", label: "General"/);
+  assert.match(settings, /id: "daily-notes", label: "Daily Notes"/);
+  assert.match(settings, /id: "colours", label: "Colours"/);
+  assert.match(settings, /id: "appearance", label: "Appearance"/);
+  assert.match(settings, /categories\.find\(\(category\) => category\.id === this\.activeCategory\)\?\.render\(\)/);
+  assert.match(calendar, /text: "Today"/);
+  assert.match(calendar, /text: "‹"/);
+  assert.match(calendar, /text: "›"/);
+  assert.match(bundle, /daily-calendar-settings-tabs/);
+});
+
+test("task checkboxes use the active theme's checkbox shape in both task layouts", async () => {
+  const shared = await read("src/views/shared.ts");
+  const timeline = await read("src/views/timelineView.ts");
+  const css = await read("styles.css");
+  const bundle = await read("dist/main.js");
+  assert.match(shared, /function usesDefaultObsidianTheme\(app: App\)/);
+  assert.match(shared, /const useLegacyCheckbox = usesDefaultObsidianTheme\(app\)/);
+  assert.match(shared, /parent\.createDiv\(\{ cls: "dc-pill-check"/,
+    "built-in Obsidian themes retain the original custom checkbox implementation");
+  assert.match(shared, /cls: "dc-task-checkbox task-list-item-checkbox"/,
+    "community themes receive a native checkbox with Obsidian's standard checkbox class");
+  assert.match(shared, /setAttribute\("data-task", marker\)/);
+  assert.match(timeline, /renderTaskCheckbox\(body, this\.host\.app, item/);
+  assert.match(css, /input\.dc-task-checkbox\s*\{[^}]*accent-color:\s*var\(--dc-item-color\)/s);
+  assert.doesNotMatch(css, /input\.dc-task-checkbox\s*\{[^}]*border-radius:/s,
+    "the plugin must not override theme-specific square or circular checkbox radii");
+  assert.match(bundle, /task-list-item-checkbox/);
+});
+
+
+
+test("task hover labels are removed and custom checkbox markers are preserved", async () => {
+  const shared = await read("src/views/shared.ts");
+  const timeline = await read("src/views/timelineView.ts");
+  const settings = await read("src/settings.ts");
+  const parser = await read("src/parser.ts");
+  const writer = await read("src/writer.ts");
+  const store = await read("src/store.ts");
+  const bundle = await read("dist/main.js");
+  assert.doesNotMatch(shared + timeline + bundle, /Mark task complete:/);
+  assert.doesNotMatch(settings, /Daynest settings categories/);
+  assert.match(parser, /const TASK_RE = \/\^/);
+  assert.match(parser, /checkboxStatus: box/);
+  assert.match(writer, /item\.checkboxStatus \?\? \(item\.completed \? "x" : " "\)/);
+  assert.match(store, /changes\.checkboxStatus \?\?/);
+});
+
+test("task popovers appear only when a title or tags are actually clipped", async () => {
+  const shared = await read("src/views/shared.ts");
+  const timeline = await read("src/views/timelineView.ts");
+  const bundle = await read("dist/main.js");
+  assert.match(shared, /const titleIsClipped = label\.scrollWidth > label\.clientWidth \+ 1 \|\| label\.scrollHeight > label\.clientHeight \+ 1/);
+  assert.match(shared, /if \(!titleIsClipped && !tagsAreHidden\?\.\(\)\) return/);
+  assert.match(timeline, /const tagsAreHidden = visibleTags\.length !== item\.tags\.length/);
+  assert.match(timeline, /return titleIsClipped \|\| tagsAreHidden/);
+  assert.match(timeline, /!hovered \|\| !el\.isConnected \|\| !shouldShow\(\)/);
+  assert.match(bundle, /!shouldShow\(\)/);
 });
